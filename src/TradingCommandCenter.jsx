@@ -651,6 +651,9 @@ const CONFIRM_DEFS={
   "Not buying premium into an IV-crush event":"You're not buying options right before an event (earnings, Fed, CPI) that will crush IV afterward. IV crush can wipe out a long option even when you nailed the direction. Check the calendar first.",
   "Stop is defined (max 40–50% on the option)":"You've set your exit BEFORE entering — derived from the invalidation level, capped at 40–50% of premium. Zero is never the stop. If you can't say where you're wrong, you don't have a trade.",
 };
+/* Pull the underlying price out of an alert string like "… stock @ 293.0". */
+function alertLevel(s){ const m=String(s||"").match(/@\s*\$?\s*(\d+(?:\.\d+)?)/); return m?Number(m[1]):null; }
+
 function ExamineNextTrade({watch,lockSym,prefill,showScan=true,idx,onRemove}){
   const [uid]=useState(()=>"exwl"+Math.random().toString(36).slice(2,7));
   const [sym,setSym]=useState(lockSym||"IWM");
@@ -659,6 +662,7 @@ function ExamineNextTrade({watch,lockSym,prefill,showScan=true,idx,onRemove}){
   const [entry,setEntry]=useState(""); const [stop,setStop]=useState(""); const [target,setTarget]=useState(""); const [qty,setQty]=useState("1"); const [delta,setDelta]=useState(""); const [riskBudget,setRiskBudget]=useState("");
   const [plan,setPlan]=useState(null); const [filled,setFilled]=useState(false); const [inval,setInval]=useState(""); const [strikeInfo,setStrikeInfo]=useState(""); const [moneyness,setMoneyness]=useState(""); const [theta,setTheta]=useState(""); const [bid,setBid]=useState(""); const [ask,setAsk]=useState("");
   const [sellPrice,setSellPrice]=useState(""); const [alerts,setAlerts]=useState([]); const [alertInput,setAlertInput]=useState("");
+  const [live,setLive]=useState(null); const [liveErr,setLiveErr]=useState(""); const [liveBusy,setLiveBusy]=useState(false); const [notify,setNotify]=useState(false); const firedRef=useRef({});
   const [chatOpen,setChatOpen]=useState(false); const [msgs,setMsgs]=useState([]); const [chatInput,setChatInput]=useState(""); const [chatBusy,setChatBusy]=useState(false);
   const [legs,setLegs]=useState([{q:"",p:""},{q:"",p:""},{q:"",p:""}]);
   const [actStrike,setActStrike]=useState(""); const [actBuy,setActBuy]=useState(""); const [actSell,setActSell]=useState(""); const [actQty,setActQty]=useState("");
@@ -702,6 +706,39 @@ function ExamineNextTrade({watch,lockSym,prefill,showScan=true,idx,onRemove}){
       setEntry(""); setStop(""); setTarget(""); setDelta(""); setInval(""); setStrikeInfo(""); setMoneyness(""); setTheta(""); setBid(""); setAsk(""); setSellPrice(""); setAlerts([]); setLegs([{q:"",p:""},{q:"",p:""},{q:"",p:""}]); setFilled(false);
     }
   },[plan,dir]);
+  async function checkLive(){
+    const s=(sym||"").toUpperCase(); if(!s) return;
+    setLiveBusy(true);
+    try{
+      const r=await fetch(`/api/ohlc?symbol=${encodeURIComponent(s)}&interval=5m&range=1d`);
+      const j=await r.json().catch(()=>null);
+      const bars=(j&&Array.isArray(j.bars))?j.bars:null;
+      if(!bars||!bars.length){ setLiveErr((j&&j.error)||"no price"); setLiveBusy(false); return; }
+      const price=Number(bars[bars.length-1].c); setLive({price,at:Date.now()}); setLiveErr("");
+      if(notify && typeof Notification!=="undefined" && Notification.permission==="granted"){
+        alerts.forEach(a=>{ const lv=alertLevel(a); if(lv==null) return;
+          const thr=Math.max(0.1, lv*0.0015); const hit=Math.abs(price-lv)<=thr;
+          if(hit && !firedRef.current[a]){ firedRef.current[a]=true; try{ new Notification(`${s} @ $${price.toFixed(2)}`,{body:a}); }catch(e){} }
+          else if(!hit){ firedRef.current[a]=false; }
+        });
+      }
+    }catch(e){ setLiveErr("check failed"); }
+    setLiveBusy(false);
+  }
+  useEffect(()=>{
+    const has=alerts.some(a=>alertLevel(a)!=null);
+    if(!has){ setLive(null); return; }
+    checkLive();
+    const iv=setInterval(checkLive,60000);
+    return ()=>clearInterval(iv);
+  },[sym, alerts.length, notify]);
+  const toggleNotify=async()=>{
+    if(notify){ setNotify(false); return; }
+    if(typeof Notification==="undefined"){ setLiveErr("notifications not supported here"); return; }
+    let perm=Notification.permission;
+    if(perm!=="granted") perm=await Notification.requestPermission();
+    if(perm==="granted"){ setNotify(true); firedRef.current={}; checkLive(); } else setLiveErr("notifications blocked in browser");
+  };
   async function scanFill(){
     if(scanning) return; setScanning(true); setScanErr("");
     try{
@@ -917,21 +954,38 @@ function ExamineNextTrade({watch,lockSym,prefill,showScan=true,idx,onRemove}){
       <div style={{marginBottom:14,padding:"13px 14px",background:"var(--bg)",border:"1px solid var(--line2)",borderRadius:11}}>
         <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:10}}>
           <div className="eyebrow" style={{margin:0}}>Exit plan & alerts</div>
-          <Help align="left" text="Your exit and the levels to watch. Strike = the contract. Sell at = the option premium where you take profit / scale out. Alerts = the underlying stock levels that matter (entry trigger, stop/invalidation, take-profit) — set these as price alerts on your broker or TradingView, since the app can't push live alerts."/>
+          <Help align="left" text="Your exit and the levels to watch. Strike = the contract. Sell at = the option premium where you take profit / scale out. Alerts = the underlying stock levels that matter (entry trigger, stop/invalidation, take-profit). The app now checks each level with an '@ price' against the live price while it's open — badging HIT or how far away — and can pop a browser alert. Still set them on your broker/TradingView too, for when the app is closed."/>
         </div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:11}}>
           <div><div className="mono" style={{fontSize:11.5,color:"var(--faint)",marginBottom:3}}>Strike / contract</div><div className="mono" style={{...fld,padding:"8px 9px",fontWeight:700,color:"var(--brass)"}}>{strikeInfo||"—"}</div></div>
           <div><div className="mono" style={{fontSize:11.5,color:"var(--faint)",marginBottom:3}}>Sell at $ (take profit)</div><input value={sellPrice} onChange={e2=>setSellPrice(e2.target.value)} className="mono" placeholder="target premium" style={{...fld,width:"100%",padding:"8px 9px",color:"var(--bull)",fontWeight:700}}/></div>
         </div>
-        <div className="mono" style={{fontSize:11.5,color:"var(--faint)",marginBottom:6}}>🔔 Alerts to set on your broker / TradingView</div>
+        <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:6}}>
+          <span className="mono" style={{fontSize:11.5,color:"var(--faint)"}}>🔔 Alerts — live vs {(sym||"").toUpperCase()}</span>
+          {live && <span className="mono" style={{fontSize:11.5}}>· <b style={{color:"var(--brass)"}}>${live.price.toFixed(2)}</b> <span style={{color:"var(--faint)"}}>@ {new Date(live.at).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})}</span></span>}
+          {liveErr && <span className="mono" style={{fontSize:11,color:"var(--bear)"}}>{liveErr}</span>}
+          <span style={{marginLeft:"auto",display:"flex",gap:6}}>
+            <button className="btn" onClick={checkLive} disabled={liveBusy} style={{padding:"3px 9px",fontSize:11}} title="Refresh live price">{liveBusy?"…":"↻ check"}</button>
+            <button className="btn" onClick={toggleNotify} style={{padding:"3px 9px",fontSize:11,borderColor:notify?"var(--brass)":"var(--line2)",color:notify?"var(--brass)":"var(--dim)"}} title="Pop a browser alert when a level is hit (while the app is open)">{notify?"🔔 on":"🔔 notify"}</button>
+          </span>
+        </div>
         <div style={{display:"flex",flexDirection:"column",gap:5,marginBottom:8}}>
           {alerts.length===0 && <div style={{fontSize:13,color:"var(--faint)"}}>Scan or add levels below.</div>}
-          {alerts.map((a,i)=>(
-            <div key={i} style={{display:"flex",alignItems:"center",gap:8,padding:"7px 10px",background:"var(--bg3)",border:"1px solid var(--line)",borderRadius:8}}>
+          {alerts.map((a,i)=>{
+            const lv=alertLevel(a); const hit=(lv!=null&&live)?Math.abs(live.price-lv)<=Math.max(0.1,lv*0.0015):false;
+            let badge=null;
+            if(lv!=null&&live){ const d=live.price-lv;
+              badge = hit
+                ? <span className="mono" style={{fontSize:11,fontWeight:800,color:"#0b0e13",background:"var(--brass)",padding:"2px 8px",borderRadius:6,flexShrink:0}}>● HIT</span>
+                : <span className="mono" style={{fontSize:11.5,flexShrink:0,color:d>0?"var(--bull)":"var(--bear)"}}>{d>0?"▲":"▼"} {Math.abs(d).toFixed(2)} away</span>;
+            }
+            return (
+            <div key={i} style={{display:"flex",alignItems:"center",gap:8,padding:"7px 10px",background:"var(--bg3)",border:"1px solid "+(hit?"var(--brass)":"var(--line)"),borderRadius:8}}>
               <span style={{fontSize:13,color:"var(--bone)",flex:1,lineHeight:1.4}}>{a}</span>
+              {badge}
               <button onClick={()=>setAlerts(alerts.filter((_,j)=>j!==i))} style={{border:"none",background:"transparent",color:"var(--faint)",cursor:"pointer",fontSize:13.5,flexShrink:0}}>✕</button>
             </div>
-          ))}
+          );})}
         </div>
         <div style={{display:"flex",gap:8}}>
           <input value={alertInput} onChange={e2=>setAlertInput(e2.target.value)} onKeyDown={e2=>{if(e2.key==="Enter"&&alertInput.trim()){setAlerts([...alerts,alertInput.trim()]);setAlertInput("");}}} placeholder="e.g. alert @ 292.00 break" style={{...fld,flex:1,padding:"8px 10px",fontSize:13.5}}/>
