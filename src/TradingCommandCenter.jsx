@@ -1960,19 +1960,14 @@ function Today({trades,setTrades,watch,quotes,setQuotes,goJournal,goRunner}){
   const wr = closed.length?Math.round(wins/closed.length*100):0;
   const discip = trades.length?Math.round(trades.filter(t=>t.planFollowed).length/trades.length*100):0;
 
+  useEffect(()=>{ if(watch&&watch.length) syncQuotes(); },[]); // free auto-load prices on open (no AI)
   async function syncQuotes(){
     setLoadingQ(true); setErr("");
     try{
-      const data=await callClaude({
-        tools:[{type:"web_search_20250305",name:"web_search"}],
-        system:"You fetch latest available stock/ETF prices. Return ONLY a JSON object mapping each ticker symbol to {\"price\":number,\"changePct\":number} using the most recent close or last price you can find. No prose, no markdown fences. Omit any ticker you cannot find.",
-        messages:[{role:"user",content:`Latest prices and % change today for: ${watch.join(", ")}. Today is ${todayISO()}.`}]
-      });
-      const j=extractJson(getText(data));
-      if(j&&typeof j==="object"){
-        const clean={}; for(const k of Object.keys(j)){ const v=j[k]; if(v&&v.price!=null) clean[k.toUpperCase()]={price:Number(v.price),changePct:Number(v.changePct)||0}; }
-        setQuotes(q=>({...q,...clean}));
-      } else setErr("Couldn't parse quotes — try again.");
+      const r=await fetch(`/api/quotes?symbols=${encodeURIComponent((watch||[]).join(","))}`);
+      const j=await r.json().catch(()=>null);
+      if(j&&j.quotes&&typeof j.quotes==="object") setQuotes(q=>({...q,...j.quotes}));
+      else setErr((j&&j.error)||"Couldn't load quotes — try again.");
     }catch(e){ setErr("Quote sync failed. Check connection and retry."); }
     setLoadingQ(false);
   }
@@ -2476,17 +2471,16 @@ function Sectors({quotes,setQuotes}){
   const [err,setErr]=useState("");
   const [sel,setSel]=useState("XLK");
 
+  useEffect(()=>{ sync(); },[]); // free auto-load sector prices on open (no AI)
   async function sync(){
     setLoading(true); setErr("");
     try{
       const syms=[...SECTORS.map(s=>s.sym),"SPY"];
-      const data=await callClaude({ tools:[{type:"web_search_20250305",name:"web_search"}],
-        system:"Return ONLY a JSON object mapping each ticker to {\"price\":number,\"changePct\":number} from the most recent price you can find. No prose or fences. Omit unknowns.",
-        messages:[{role:"user",content:`Latest price and % change today for these SPDR Select Sector ETFs and SPY: ${syms.join(", ")}. Today ${todayISO()}.`}]});
-      const j=extractJson(getText(data));
-      if(j){const clean={};for(const k of Object.keys(j)){const v=j[k];if(v&&v.price!=null)clean[k.toUpperCase()]={price:Number(v.price),changePct:Number(v.changePct)||0};}setQuotes(q=>({...q,...clean}));}
-      else setErr("Couldn't parse sector quotes — try again.");
-    }catch(e){ setErr(aiErr(e,"Sync")); }
+      const r=await fetch(`/api/quotes?symbols=${encodeURIComponent(syms.join(","))}`);
+      const j=await r.json().catch(()=>null);
+      if(j&&j.quotes&&typeof j.quotes==="object") setQuotes(q=>({...q,...j.quotes}));
+      else setErr((j&&j.error)||"Couldn't load sector quotes — try again.");
+    }catch(e){ setErr("Quote sync failed. Check connection and retry."); }
     setLoading(false);
   }
 
@@ -3450,16 +3444,15 @@ function Watchlist({watch,setWatch,quotes,setQuotes}){
     setTimeout(()=>setBulk(null),5000);
   }
 
+  useEffect(()=>{ if(watch&&watch.length) sync(); },[]); // free auto-load prices on open (no AI)
   async function sync(){
     setLoading(true); setErr("");
     try{
-      const data=await callClaude({ tools:[{type:"web_search_20250305",name:"web_search"}],
-        system:"Return ONLY a JSON object mapping each ticker to {\"price\":number,\"changePct\":number} from the most recent price you can find. No prose or fences. Omit unknowns.",
-        messages:[{role:"user",content:`Latest price and % change for: ${watch.join(", ")}. Today ${todayISO()}.`}]});
-      const j=extractJson(getText(data));
-      if(j){const clean={};for(const k of Object.keys(j)){const v=j[k];if(v&&v.price!=null)clean[k.toUpperCase()]={price:Number(v.price),changePct:Number(v.changePct)||0};}setQuotes(q=>({...q,...clean}));}
-      else setErr("Couldn't parse quotes.");
-    }catch(e){ setErr(aiErr(e,"Sync")); }
+      const r=await fetch(`/api/quotes?symbols=${encodeURIComponent((watch||[]).join(","))}`);
+      const j=await r.json().catch(()=>null);
+      if(j&&j.quotes&&typeof j.quotes==="object") setQuotes(q=>({...q,...j.quotes}));
+      else setErr((j&&j.error)||"Couldn't load quotes.");
+    }catch(e){ setErr("Quote sync failed. Check connection and retry."); }
     setLoading(false);
   }
 
