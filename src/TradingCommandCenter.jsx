@@ -80,6 +80,7 @@ function linksFor(sym, interval="15"){
   const tvSym = ex ? `${TV_MAP[ex]}:${s}` : s;
   const tvE = encodeURIComponent(tvSym);
   return {
+    tvSym,
     tv:      `https://www.tradingview.com/chart/?symbol=${tvE}&interval=${interval}`,
     rh:      `https://robinhood.com/stocks/${s}`,
     rhOpt:   `https://robinhood.com/options/chains/${s}`,
@@ -496,7 +497,7 @@ export default function TradingCommandCenter(){
       {/* Body */}
       <div style={{maxWidth:1180,margin:"0 auto",padding:"22px 20px 80px"}}>
         {tab==="guide" && <Guide/>}
-        {tab==="today" && <Today trades={trades} setTrades={setTrades} watch={watch} quotes={quotes} setQuotes={setQuotes} goJournal={()=>setTab("journal")} />}
+        {tab==="today" && <Today trades={trades} setTrades={setTrades} watch={watch} quotes={quotes} setQuotes={setQuotes} goJournal={()=>setTab("journal")} goRunner={()=>setTab("runner")} />}
         {tab==="dash" && <Dashboard trades={trades} goJournal={()=>setTab("journal")} />}
         {tab==="journal" && <Journal trades={trades} setTrades={setTrades} watch={watch} />}
         {tab==="review" && <ReviewPanel trades={trades} />}
@@ -1855,11 +1856,46 @@ calendar = ONLY today's scheduled US releases that move equities (ISM, jobs/NFP,
   );
 }
 
-function Today({trades,setTrades,watch,quotes,setQuotes,goJournal}){
+/* Reusable "Runners to watch" card — reads the last Runner scan, shows the strong
+   ones, and (with onChart) charts them. Shared by Today and Watchlist. */
+function RunnersToWatch({goRunner,onChart}){
+  const [runners,setRunners]=useState([]);
+  useEffect(()=>{ (async()=>{ try{ const s=await sGet("runner_scan"); if(s&&Array.isArray(s.rows)){ setRunners(s.rows.filter(r=>runnerScore(r)>=60).sort((a,b)=>runnerScore(b)-runnerScore(a)).slice(0,6)); } }catch(e){} })(); },[]);
+  if(!runners.length) return null;
+  return (
+    <div className="card" style={{padding:18,marginBottom:18,border:"1px solid var(--brass)"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,marginBottom:12,flexWrap:"wrap"}}>
+        <div>
+          <div className="eyebrow" style={{color:"var(--brass)"}}>🚀 Runners to watch</div>
+          <h3 className="disp" style={{margin:"3px 0 0",fontSize:18,fontWeight:700}}>{runners.length} 1000% candidate{runners.length===1?"":"s"} from your last scan</h3>
+        </div>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+          {onChart && <button className="btn btn-primary" onClick={()=>onChart(runners[0])} style={{padding:"6px 11px",fontSize:12.5}}>📈 Chart top</button>}
+          {goRunner && <button className="btn-ghost btn" onClick={goRunner}>Open Runner →</button>}
+        </div>
+      </div>
+      <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
+        {runners.map(r=>{ const sc=runnerScore(r); return (
+          <div key={r.s} style={{display:"flex",alignItems:"center",gap:8,padding:"7px 11px",background:"var(--bg)",border:"1px solid var(--line2)",borderRadius:9}}>
+            <span className="mono" style={{fontWeight:700,fontSize:14}}>{r.s}</span>
+            <span className="mono" style={{fontSize:12.5,color:r.dir==="up"?"var(--bull)":"var(--bear)"}}>{r.dir==="up"?"▲":"▼"}</span>
+            <span className="mono" style={{fontWeight:700,fontSize:12.5,color:scoreTone(sc)}}>{sc}</span>
+            {r.trig!=null && <span className="mono" style={{fontSize:11.5,color:"var(--faint)"}}>trig {num(r.trig)}</span>}
+            {onChart && <button className="btn" onClick={()=>onChart(r)} style={{padding:"3px 8px",fontSize:11}} title={"Chart "+r.s}>📈</button>}
+          </div>
+        );})}
+      </div>
+      <div className="mono" style={{fontSize:11.5,color:"var(--faint)",marginTop:10}}>From your last Runner scan{goRunner?" · Open Runner to set alerts →":""}</div>
+    </div>
+  );
+}
+
+function Today({trades,setTrades,watch,quotes,setQuotes,goJournal,goRunner}){
   const [brief,setBrief]=useState("");
   const [loadingB,setLoadingB]=useState(false);
   const [loadingQ,setLoadingQ]=useState(false);
   const [err,setErr]=useState("");
+  const [todayChart,setTodayChart]=useState(null);
 
   const closed = trades.map(t=>({...t,pnl:computePnl(t)})).filter(t=>t.pnl!=null);
   const sow=startOfWeek();
@@ -1902,6 +1938,9 @@ function Today({trades,setTrades,watch,quotes,setQuotes,goJournal}){
   return (
     <div>
       <div style={{marginBottom:18}}><Goals trades={trades} setTrades={setTrades} watch={watch}/></div>
+
+      {todayChart && <ChartModal row={todayChart} onClose={()=>setTodayChart(null)}/>}
+      <RunnersToWatch goRunner={goRunner} onChart={setTodayChart}/>
 
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:12,marginBottom:18}}>
         <Stat label="Week P&L" value={fmtMoney(wk)} tone={wk} help="Your total profit/loss on trades closed since Monday. Green = up week, red = down week." />
@@ -2954,6 +2993,132 @@ function TenXMath({seed}){
 }
 
 /* ---------- the scanner ---------- */
+/* Self-drawn candlestick chart with the setup levels drawn ON the candles.
+   Bars come from /api/ohlc (server-side Yahoo fetch, no CORS). */
+function ChartDraw({sym,interval,levels,height=440}){
+  const wrapRef=useRef(null);
+  const [w,setW]=useState(720);
+  const [bars,setBars]=useState(null);
+  const [err,setErr]=useState("");
+  const [loading,setLoading]=useState(true);
+
+  useEffect(()=>{
+    const el=wrapRef.current; if(!el) return;
+    const measure=()=>setW(Math.max(280,el.clientWidth||720));
+    measure();
+    let ro; if(typeof ResizeObserver!=="undefined"){ ro=new ResizeObserver(measure); ro.observe(el); }
+    window.addEventListener("resize",measure);
+    return ()=>{ window.removeEventListener("resize",measure); if(ro) ro.disconnect(); };
+  },[]);
+
+  useEffect(()=>{
+    let dead=false;
+    const rangeFor={"15m":"5d","60m":"1mo","1d":"6mo"};
+    const iv=interval||"1d";
+    setLoading(true); setErr(""); setBars(null);
+    fetch(`/api/ohlc?symbol=${encodeURIComponent(sym)}&interval=${encodeURIComponent(iv)}&range=${rangeFor[iv]||"6mo"}`)
+      .then(r=>r.json().then(j=>({ok:r.ok,j})).catch(()=>({ok:false,j:null})))
+      .then(({ok,j})=>{ if(dead) return;
+        if(!ok||!j||!Array.isArray(j.bars)||!j.bars.length) setErr((j&&j.error)||("No chart data for "+sym+"."));
+        else setBars(j.bars.slice(-150));
+      })
+      .catch(()=>{ if(!dead) setErr("Couldn't load chart data."); })
+      .finally(()=>{ if(!dead) setLoading(false); });
+    return ()=>{ dead=true; };
+  },[sym,interval]);
+
+  const H=height, padL=6, padR=60, padT=10, padB=6;
+  const plotW=Math.max(60,w-padL-padR), plotH=H-padT-padB;
+  const box={height:H,display:"flex",alignItems:"center",justifyContent:"center",textAlign:"center",padding:20,color:"var(--faint)",fontSize:13};
+
+  let inner;
+  if(loading) inner=<div style={box}><span className="spin"/></div>;
+  else if(err) inner=<div style={box}>{err}</div>;
+  else if(bars&&bars.length){
+    const lv=levels||{};
+    const lvVals=[lv.trigger,lv.stop,lv.target,lv.level].map(Number).filter(v=>isFinite(v)&&v>0);
+    let lo=Math.min(...bars.map(b=>b.l),...(lvVals.length?lvVals:[Infinity]));
+    let hi=Math.max(...bars.map(b=>b.h),...(lvVals.length?lvVals:[-Infinity]));
+    if(!isFinite(lo)||!isFinite(hi)||hi<=lo){ lo=Math.min(...bars.map(b=>b.l)); hi=Math.max(...bars.map(b=>b.h)); }
+    const span=(hi-lo)||1; lo-=span*0.06; hi+=span*0.06;
+    const y=p=>padT+(hi-p)/(hi-lo)*plotH;
+    const n=bars.length, slot=plotW/n, bw=Math.max(1,Math.min(9,slot*0.62));
+    const cur=bars[bars.length-1].c;
+    const specs=[["Trigger",lv.trigger,"#e8ebef"],["Stop",lv.stop,"#dc2626"],["Target",lv.target,"#16a34a"],["Level",lv.level,"#f2be6e"]];
+    inner=(
+      <svg width={w} height={H} style={{display:"block"}}>
+        {[0,0.25,0.5,0.75,1].map((f,i)=>{ const yy=padT+f*plotH; const p=hi-(hi-lo)*f; return (
+          <g key={"g"+i}>
+            <line x1={padL} y1={yy} x2={padL+plotW} y2={yy} stroke="#232a34" strokeWidth="1"/>
+            <text x={padL+plotW+5} y={yy+3} fontSize="10" fill="#8892a0" fontFamily="monospace">{p.toFixed(2)}</text>
+          </g>);})}
+        {bars.map((b,i)=>{ const cx=padL+slot*i+slot/2; const up=b.c>=b.o; const col=up?"#16a34a":"#dc2626";
+          const yO=y(b.o),yC=y(b.c); const top=Math.min(yO,yC); const hgt=Math.max(1,Math.abs(yO-yC));
+          return (<g key={"c"+i}>
+            <line x1={cx} y1={y(b.h)} x2={cx} y2={y(b.l)} stroke={col} strokeWidth="1"/>
+            <rect x={cx-bw/2} y={top} width={bw} height={hgt} fill={col}/>
+          </g>);})}
+        <line x1={padL} y1={y(cur)} x2={padL+plotW} y2={y(cur)} stroke="#f2be6e" strokeWidth="1" strokeDasharray="1 3" opacity="0.6"/>
+        {specs.map(([lbl,val,c],i)=>{ const v=Number(val); if(val==null||!isFinite(v)||v<lo||v>hi) return null; const yy=y(v);
+          return (<g key={"L"+i}>
+            <line x1={padL} y1={yy} x2={padL+plotW} y2={yy} stroke={c} strokeWidth="1.3" strokeDasharray="5 4"/>
+            <rect x={padL+plotW-1} y={yy-8} width={60} height={13} fill={c} rx="2"/>
+            <text x={padL+plotW+3} y={yy+2} fontSize="9.5" fill="#0b0e13" fontFamily="monospace" fontWeight="700">{lbl} {v.toFixed(2)}</text>
+          </g>);})}
+      </svg>
+    );
+  } else inner=<div style={box}>No data.</div>;
+
+  return <div ref={wrapRef} style={{width:"100%"}}>{inner}</div>;
+}
+
+/* In-app chart: self-drawn candles with the setup levels on them, plus a TradingView deep-link. */
+function ChartModal({row,onClose}){
+  const r=row||{};
+  const sym=String(r.s||r.sym||"").toUpperCase();
+  const [iv,setIv]=useState("D");
+  const L=linksFor(sym,iv);
+  const tvE=encodeURIComponent(L.tvSym||sym);
+  const embed=`https://s.tradingview.com/widgetembed/?symbol=${tvE}&interval=${iv}&theme=dark&style=1&toolbarbg=131722&withdateranges=1&hideideas=1&locale=en&timezone=America%2FNew_York`;
+  const up=r.dir==="up"||r.dir==="Long"||r.dir==="Call";
+  const trig=(r.trig!=null&&r.trig!=="")?num(r.trig):null;
+  const stop=(r.inval!=null&&r.inval!=="")?num(r.inval):null;
+  const risk=(trig!=null&&stop!=null)?Math.abs(trig-stop):null;
+  const target=(trig!=null&&risk)?(up?trig+risk*3:trig-risk*3):null;
+  useEffect(()=>{ const h=e=>{ if(e.key==="Escape") onClose(); }; window.addEventListener("keydown",h); return ()=>window.removeEventListener("keydown",h); },[onClose]);
+  return (
+    <div onClick={onClose} style={{position:"fixed",inset:0,zIndex:200,background:"rgba(0,0,0,0.72)",display:"flex",alignItems:"center",justifyContent:"center",padding:"3vh 2vw"}}>
+      <div onClick={e=>e.stopPropagation()} className="card" style={{width:"96vw",maxWidth:1000,maxHeight:"94vh",display:"flex",flexDirection:"column",padding:0,overflow:"hidden"}}>
+        <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",padding:"12px 16px",borderBottom:"1px solid var(--line)"}}>
+          <span className="disp" style={{fontSize:20,fontWeight:800}}>{sym||"—"}</span>
+          {r.dir && <span className="tag" style={{color:up?"var(--bull)":"var(--bear)",borderColor:up?"var(--bull)":"var(--bear)"}}>{up?"▲ Calls":"▼ Puts"}</span>}
+          <span className="mono" style={{fontSize:11.5,color:"var(--faint)"}}>{L.exchName}</span>
+          <div style={{display:"flex",gap:6,marginLeft:"auto"}}>
+            {[["15","15m"],["60","1h"],["D","1D"]].map(([v,l])=>(
+              <button key={v} className="btn" onClick={()=>setIv(v)} style={{padding:"5px 10px",fontSize:12,borderColor:iv===v?"var(--brass)":"var(--line2)",color:iv===v?"var(--brass)":"var(--dim)"}}>{l}</button>))}
+          </div>
+          <button className="btn" onClick={onClose} style={{padding:"5px 11px",fontSize:14}} aria-label="Close">✕</button>
+        </div>
+        {(trig!=null||stop!=null||target!=null||r.strike) && (
+          <div style={{display:"flex",gap:16,flexWrap:"wrap",padding:"10px 16px",borderBottom:"1px solid var(--line)",fontFamily:"'JetBrains Mono',monospace",fontSize:12.5}}>
+            {trig!=null && <span style={{color:"var(--faint)"}}>Trigger <b style={{color:"var(--bone)"}}>${trig.toFixed(2)}</b></span>}
+            {stop!=null && <span style={{color:"var(--faint)"}}>Stop <b style={{color:"var(--bear)"}}>${stop.toFixed(2)}</b></span>}
+            {target!=null && <span style={{color:"var(--faint)"}}>Target 1:3 <b style={{color:"var(--bull)"}}>${target.toFixed(2)}</b></span>}
+            {r.strike && <span style={{color:"var(--faint)"}}>Contract <b style={{color:"var(--brass)"}}>${num(r.strike)} {up?"call":"put"}{r.dte?" · "+num(r.dte)+" DTE":""}</b></span>}
+          </div>
+        )}
+        <div style={{flex:1,minHeight:340,background:"#0b0e13",overflow:"auto"}}>
+          <ChartDraw sym={sym} interval={iv} levels={{trigger:trig,stop,target}}/>
+        </div>
+        <div className="mono" style={{display:"flex",gap:12,flexWrap:"wrap",alignItems:"center",fontSize:10.5,color:"var(--faint)",padding:"8px 16px",borderTop:"1px solid var(--line)",lineHeight:1.5}}>
+          <span>Candles: Yahoo Finance · trigger / stop / target drawn are the app's read. Not financial advice.</span>
+          <a href={L.tv} target="_blank" rel="noopener noreferrer" style={{marginLeft:"auto",color:"var(--brass)",textDecoration:"none",whiteSpace:"nowrap"}}>Open full chart on TradingView ↗</a>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function RunnerScan({watch}){
   const [rows,setRows]=useState(null);
   const [loading,setLoading]=useState(false);
@@ -2964,6 +3129,7 @@ function RunnerScan({watch}){
   const [open,setOpen]=useState(null);
   const [seed,setSeed]=useState(null);
   const [minScore,setMinScore]=useState(0);
+  const [chart,setChart]=useState(null);
 
   useEffect(()=>{ (async()=>{ const s=await sGet("runner_scan"); if(s&&Array.isArray(s.rows)){ setRows(s.rows); setWhen(s.when||null); } })(); },[]);
 
@@ -2997,6 +3163,7 @@ dir="up"|"down". px=last close. atr=avg DAILY range in $ (~14d). comp/lvl/cat/fu
 
   return (
     <div>
+      {chart && <ChartModal row={chart} onClose={()=>setChart(null)}/>}
       <div className="card" style={{padding:20,marginBottom:16}}>
         <div className="eyebrow" style={{marginBottom:5}}>Runner scan</div>
         <div className="disp" style={{fontSize:25,fontWeight:800,marginBottom:8}}>Hunting the 1000% move</div>
@@ -3064,6 +3231,7 @@ dir="up"|"down". px=last close. atr=avg DAILY range in $ (~14d). comp/lvl/cat/fu
               <button className="btn btn-primary" style={{padding:"8px 13px",fontSize:13}}
                 onClick={()=>{ setSeed({_t:Date.now(),sym:r.s,spot:String(num(r.px)||""),strike:String(num(r.strike)||""),prem:String(num(r.prem)||""),atr:String(num(r.atr)||""),dte:String(num(r.dte)||""),dir:r.dir==="down"?"Put":"Call"});
                   const el=document.getElementById("tenx"); if(el) el.scrollIntoView({behavior:"smooth",block:"start"}); }}>Run the 10x math →</button>
+              <button className="btn" onClick={()=>setChart(r)} style={{padding:"8px 13px",fontSize:13}}>📈 Chart it for me</button>
               <LinkBar sym={r.s}/>
             </div>
 
@@ -3186,6 +3354,7 @@ function Watchlist({watch,setWatch,quotes,setQuotes}){
   const [bulk,setBulk]=useState(null); // {done,total,finished} while digging all
   const [bias,setBias]=useState({}); const [scanning,setScanning]=useState(false);
   const [scanData,setScanData]=useState(null);
+  const [chartRow,setChartRow]=useState(null);
   useEffect(()=>{ setScanData(null); },[sel]);
   useEffect(()=>{(async()=>{ const b=await sGet("watch:bias"); if(b&&typeof b==="object") setBias(b); })();},[]);
   async function scanBias(){
@@ -3247,6 +3416,8 @@ function Watchlist({watch,setWatch,quotes,setQuotes}){
 
   return (
     <div>
+      {chartRow && <ChartModal row={chartRow} onClose={()=>setChartRow(null)}/>}
+      <RunnersToWatch onChart={setChartRow}/>
       {/* Chart & trade panel for selected symbol */}
       <div className="card" style={{padding:18,marginBottom:16}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:12}}>
@@ -3263,6 +3434,7 @@ function Watchlist({watch,setWatch,quotes,setQuotes}){
 
         {/* launch links */}
         <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:14}}>
+          <button onClick={()=>setChartRow({s:sel})} style={{...openA,color:"#0E1116",background:"var(--brass)",borderColor:"var(--brass)",cursor:"pointer"}}>📈 Chart it for me</button>
           <a href={L.tv} target="_blank" rel="noopener" style={{...openA,color:"var(--focus)",borderColor:"var(--focus)"}}>📈 TradingView chart ↗</a>
           <a href={L.rh} target="_blank" rel="noopener" style={{...openA,color:"var(--bone)"}}>Robinhood ↗</a>
           <a href={L.wb} target="_blank" rel="noopener" style={{...openA,color:"var(--bone)"}}>Webull ↗</a>
@@ -3327,6 +3499,7 @@ function Watchlist({watch,setWatch,quotes,setQuotes}){
               </div>
               <div className="mono" style={{fontSize:22,fontWeight:600,color:col,marginTop:8,lineHeight:1}}>{q?.price!=null?Number(q.price).toFixed(2):"—"}</div>
               <div className="mono" style={{fontSize:13.5,color:col,marginTop:4,marginBottom:10}}>{pct==null?"no quote":(pct>=0?"▲ +":"▼ ")+pct.toFixed(2)+"%"}</div>
+              <button className="btn" onClick={e=>{e.stopPropagation();setChartRow({s});}} style={{width:"100%",padding:"6px 0",fontSize:12,marginBottom:8}}>📈 Chart it for me</button>
               <LinkBar sym={s}/>
             </div>
           );
@@ -3360,19 +3533,50 @@ function KeyLevels(){
   const [vals,setVals]=useState({});
   const [saved,setSaved]=useState(null);
   const [status,setStatus]=useState("");
+  const [filling,setFilling]=useState(false);
   useEffect(()=>{(async()=>{ const s=await sGet("levels:"+tk); setSaved(s||null); setVals((s&&s.vals)||{}); setStatus(""); })();},[tk]);
   const set=(k,v)=>setVals(o=>({...o,[k]:v}));
   const save=async()=>{ const clean={}; LEVEL_FIELDS.forEach(([k])=>{const n=num(vals[k]); if(n!=null)clean[k]=n;}); const rec={vals:clean,ts:Date.now()}; await sSet("levels:"+tk,rec); setSaved(rec); setStatus("Saved "+new Date().toLocaleTimeString()); };
+  async function autofill(){
+    const sym=(tk||"").toUpperCase(); if(!sym){ setStatus("Enter a ticker first."); return; }
+    setFilling(true); setStatus("Fetching "+sym+" price…");
+    try{
+      const r=await fetch(`/api/ohlc?symbol=${encodeURIComponent(sym)}&interval=1d&range=3mo`);
+      const j=await r.json().catch(()=>null);
+      const bars=(j&&Array.isArray(j.bars))?j.bars:null;
+      if(!r.ok||!bars||!bars.length){ setStatus((j&&j.error)||("No price data for "+sym)); setFilling(false); return; }
+      const etDate=t=>{ try{ return new Date(new Date(t*1000).toLocaleString("en-US",{timeZone:"America/New_York"})); }catch(e){ return new Date(t*1000); } };
+      const monKey=d=>{ const x=new Date(d); x.setHours(0,0,0,0); x.setDate(x.getDate()-((x.getDay()+6)%7)); return x.getTime(); };
+      const bd=bars.map(b=>{ const d=etDate(b.t); return {h:Number(b.h),l:Number(b.l),d,dow:d.getDay(),key:monKey(d)}; });
+      const today=etDate(Date.now()/1000), todayKey=monKey(today), todayStr=today.toDateString();
+      let pi=bd.length-1; if(bd[pi]&&bd[pi].d.toDateString()===todayStr) pi--;
+      const prevDay=bd[pi];
+      const thisWk=bd.filter(b=>b.key===todayKey);
+      const monBar=thisWk.find(b=>b.dow===1)||thisWk[0];
+      const prevKeys=[...new Set(bd.map(b=>b.key))].filter(k=>k<todayKey).sort((a,b)=>a-b);
+      const pwk=prevKeys[prevKeys.length-1];
+      const pw=(pwk!=null)?bd.filter(b=>b.key===pwk):[];
+      const next={};
+      if(pw.length){ next.pwh=Math.max(...pw.map(b=>b.h)).toFixed(2); next.pwl=Math.min(...pw.map(b=>b.l)).toFixed(2); }
+      if(monBar){ next.mh=monBar.h.toFixed(2); next.ml=monBar.l.toFixed(2); }
+      if(prevDay){ next.pdh=prevDay.h.toFixed(2); next.pdl=prevDay.l.toFixed(2); }
+      if(!Object.keys(next).length){ setStatus("Couldn't derive levels — try again."); setFilling(false); return; }
+      setVals(v=>({...v,...next}));
+      setStatus("Auto-filled from price — review, then Save levels.");
+    }catch(e){ setStatus("Auto-fill failed — check connection."); }
+    setFilling(false);
+  }
   const rows = saved ? LEVEL_FIELDS.map(([k,l,side])=>({k,l,side,v:saved.vals[k]})).filter(r=>r.v!=null).sort((a,b)=>b.v-a.v) : [];
   const idxLink={display:"block",padding:"11px 13px",borderRadius:10,border:"1px solid var(--line2)",textDecoration:"none",background:"var(--bg)"};
   return (
     <div className="card" style={{padding:20}}>
       <div style={{display:"flex",alignItems:"center",gap:7}}><div className="eyebrow" style={{margin:0}}>Key levels</div><Help text="Your pre-market lines: previous week high/low, Monday range, prior-day high/low. These are the pivots price reacts to — where your triggers, stops, and targets live. Mark them before the open so you're ready."/></div>
       <h3 className="disp" style={{margin:"0 0 4px",fontSize:19,fontWeight:700}}>Previous-week & Monday levels</h3>
-      <p style={{margin:"0 0 14px",fontSize:14.5,color:"var(--dim)"}}>Log the levels you trade off — previous week high/low, Monday's range, prior day — and keep them saved per ticker. Highs sit above in red (resistance), lows below in green (support).</p>
+      <p style={{margin:"0 0 14px",fontSize:14.5,color:"var(--dim)"}}>Log the levels you trade off — previous week high/low, Monday's range, prior day. Tap <b style={{color:"var(--brass)"}}>⚡ Auto-fill from price</b> to pull them for this ticker, or type them in — then Save. Highs sit above in red (resistance), lows below in green (support).</p>
 
       <div style={{display:"flex",gap:10,alignItems:"flex-end",flexWrap:"wrap",marginBottom:12}}>
         <div style={{width:150}}><Field label="Ticker"><input className="mono" value={tk} onChange={e=>setTk(e.target.value.toUpperCase())}/></Field></div>
+        <button className="btn" onClick={autofill} disabled={filling} style={{opacity:filling?0.6:1}}>{filling?<span className="spin"/>:"⚡ Auto-fill from price"}</button>
         <button className="btn-primary btn" onClick={save}>Save levels</button>
         {status && <span className="mono" style={{fontSize:12.5,color:"var(--brass-dim)"}}>{status}</span>}
       </div>
