@@ -3516,19 +3516,50 @@ function KeyLevels(){
   const [vals,setVals]=useState({});
   const [saved,setSaved]=useState(null);
   const [status,setStatus]=useState("");
+  const [filling,setFilling]=useState(false);
   useEffect(()=>{(async()=>{ const s=await sGet("levels:"+tk); setSaved(s||null); setVals((s&&s.vals)||{}); setStatus(""); })();},[tk]);
   const set=(k,v)=>setVals(o=>({...o,[k]:v}));
   const save=async()=>{ const clean={}; LEVEL_FIELDS.forEach(([k])=>{const n=num(vals[k]); if(n!=null)clean[k]=n;}); const rec={vals:clean,ts:Date.now()}; await sSet("levels:"+tk,rec); setSaved(rec); setStatus("Saved "+new Date().toLocaleTimeString()); };
+  async function autofill(){
+    const sym=(tk||"").toUpperCase(); if(!sym){ setStatus("Enter a ticker first."); return; }
+    setFilling(true); setStatus("Fetching "+sym+" price…");
+    try{
+      const r=await fetch(`/api/ohlc?symbol=${encodeURIComponent(sym)}&interval=1d&range=3mo`);
+      const j=await r.json().catch(()=>null);
+      const bars=(j&&Array.isArray(j.bars))?j.bars:null;
+      if(!r.ok||!bars||!bars.length){ setStatus((j&&j.error)||("No price data for "+sym)); setFilling(false); return; }
+      const etDate=t=>{ try{ return new Date(new Date(t*1000).toLocaleString("en-US",{timeZone:"America/New_York"})); }catch(e){ return new Date(t*1000); } };
+      const monKey=d=>{ const x=new Date(d); x.setHours(0,0,0,0); x.setDate(x.getDate()-((x.getDay()+6)%7)); return x.getTime(); };
+      const bd=bars.map(b=>{ const d=etDate(b.t); return {h:Number(b.h),l:Number(b.l),d,dow:d.getDay(),key:monKey(d)}; });
+      const today=etDate(Date.now()/1000), todayKey=monKey(today), todayStr=today.toDateString();
+      let pi=bd.length-1; if(bd[pi]&&bd[pi].d.toDateString()===todayStr) pi--;
+      const prevDay=bd[pi];
+      const thisWk=bd.filter(b=>b.key===todayKey);
+      const monBar=thisWk.find(b=>b.dow===1)||thisWk[0];
+      const prevKeys=[...new Set(bd.map(b=>b.key))].filter(k=>k<todayKey).sort((a,b)=>a-b);
+      const pwk=prevKeys[prevKeys.length-1];
+      const pw=(pwk!=null)?bd.filter(b=>b.key===pwk):[];
+      const next={};
+      if(pw.length){ next.pwh=Math.max(...pw.map(b=>b.h)).toFixed(2); next.pwl=Math.min(...pw.map(b=>b.l)).toFixed(2); }
+      if(monBar){ next.mh=monBar.h.toFixed(2); next.ml=monBar.l.toFixed(2); }
+      if(prevDay){ next.pdh=prevDay.h.toFixed(2); next.pdl=prevDay.l.toFixed(2); }
+      if(!Object.keys(next).length){ setStatus("Couldn't derive levels — try again."); setFilling(false); return; }
+      setVals(v=>({...v,...next}));
+      setStatus("Auto-filled from price — review, then Save levels.");
+    }catch(e){ setStatus("Auto-fill failed — check connection."); }
+    setFilling(false);
+  }
   const rows = saved ? LEVEL_FIELDS.map(([k,l,side])=>({k,l,side,v:saved.vals[k]})).filter(r=>r.v!=null).sort((a,b)=>b.v-a.v) : [];
   const idxLink={display:"block",padding:"11px 13px",borderRadius:10,border:"1px solid var(--line2)",textDecoration:"none",background:"var(--bg)"};
   return (
     <div className="card" style={{padding:20}}>
       <div style={{display:"flex",alignItems:"center",gap:7}}><div className="eyebrow" style={{margin:0}}>Key levels</div><Help text="Your pre-market lines: previous week high/low, Monday range, prior-day high/low. These are the pivots price reacts to — where your triggers, stops, and targets live. Mark them before the open so you're ready."/></div>
       <h3 className="disp" style={{margin:"0 0 4px",fontSize:19,fontWeight:700}}>Previous-week & Monday levels</h3>
-      <p style={{margin:"0 0 14px",fontSize:14.5,color:"var(--dim)"}}>Log the levels you trade off — previous week high/low, Monday's range, prior day — and keep them saved per ticker. Highs sit above in red (resistance), lows below in green (support).</p>
+      <p style={{margin:"0 0 14px",fontSize:14.5,color:"var(--dim)"}}>Log the levels you trade off — previous week high/low, Monday's range, prior day. Tap <b style={{color:"var(--brass)"}}>⚡ Auto-fill from price</b> to pull them for this ticker, or type them in — then Save. Highs sit above in red (resistance), lows below in green (support).</p>
 
       <div style={{display:"flex",gap:10,alignItems:"flex-end",flexWrap:"wrap",marginBottom:12}}>
         <div style={{width:150}}><Field label="Ticker"><input className="mono" value={tk} onChange={e=>setTk(e.target.value.toUpperCase())}/></Field></div>
+        <button className="btn" onClick={autofill} disabled={filling} style={{opacity:filling?0.6:1}}>{filling?<span className="spin"/>:"⚡ Auto-fill from price"}</button>
         <button className="btn-primary btn" onClick={save}>Save levels</button>
         {status && <span className="mono" style={{fontSize:12.5,color:"var(--brass-dim)"}}>{status}</span>}
       </div>
