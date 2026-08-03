@@ -80,6 +80,7 @@ function linksFor(sym, interval="15"){
   const tvSym = ex ? `${TV_MAP[ex]}:${s}` : s;
   const tvE = encodeURIComponent(tvSym);
   return {
+    tvSym,
     tv:      `https://www.tradingview.com/chart/?symbol=${tvE}&interval=${interval}`,
     rh:      `https://robinhood.com/stocks/${s}`,
     rhOpt:   `https://robinhood.com/options/chains/${s}`,
@@ -2980,6 +2981,50 @@ function TenXMath({seed}){
 }
 
 /* ---------- the scanner ---------- */
+/* In-app live chart (TradingView embed) + the app's read levels. */
+function ChartModal({row,onClose}){
+  const r=row||{};
+  const sym=String(r.s||r.sym||"").toUpperCase();
+  const [iv,setIv]=useState("D");
+  const L=linksFor(sym,iv);
+  const tvE=encodeURIComponent(L.tvSym||sym);
+  const embed=`https://s.tradingview.com/widgetembed/?symbol=${tvE}&interval=${iv}&theme=dark&style=1&toolbarbg=131722&withdateranges=1&hideideas=1&locale=en&timezone=America%2FNew_York`;
+  const up=r.dir==="up"||r.dir==="Long"||r.dir==="Call";
+  const trig=(r.trig!=null&&r.trig!=="")?num(r.trig):null;
+  const stop=(r.inval!=null&&r.inval!=="")?num(r.inval):null;
+  const risk=(trig!=null&&stop!=null)?Math.abs(trig-stop):null;
+  const target=(trig!=null&&risk)?(up?trig+risk*3:trig-risk*3):null;
+  useEffect(()=>{ const h=e=>{ if(e.key==="Escape") onClose(); }; window.addEventListener("keydown",h); return ()=>window.removeEventListener("keydown",h); },[onClose]);
+  return (
+    <div onClick={onClose} style={{position:"fixed",inset:0,zIndex:200,background:"rgba(0,0,0,0.72)",display:"flex",alignItems:"center",justifyContent:"center",padding:"3vh 2vw"}}>
+      <div onClick={e=>e.stopPropagation()} className="card" style={{width:"96vw",maxWidth:1000,maxHeight:"94vh",display:"flex",flexDirection:"column",padding:0,overflow:"hidden"}}>
+        <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",padding:"12px 16px",borderBottom:"1px solid var(--line)"}}>
+          <span className="disp" style={{fontSize:20,fontWeight:800}}>{sym||"—"}</span>
+          {r.dir && <span className="tag" style={{color:up?"var(--bull)":"var(--bear)",borderColor:up?"var(--bull)":"var(--bear)"}}>{up?"▲ Calls":"▼ Puts"}</span>}
+          <span className="mono" style={{fontSize:11.5,color:"var(--faint)"}}>{L.exchName}</span>
+          <div style={{display:"flex",gap:6,marginLeft:"auto"}}>
+            {[["15","15m"],["60","1h"],["D","1D"]].map(([v,l])=>(
+              <button key={v} className="btn" onClick={()=>setIv(v)} style={{padding:"5px 10px",fontSize:12,borderColor:iv===v?"var(--brass)":"var(--line2)",color:iv===v?"var(--brass)":"var(--dim)"}}>{l}</button>))}
+          </div>
+          <button className="btn" onClick={onClose} style={{padding:"5px 11px",fontSize:14}} aria-label="Close">✕</button>
+        </div>
+        {(trig!=null||stop!=null||target!=null||r.strike) && (
+          <div style={{display:"flex",gap:16,flexWrap:"wrap",padding:"10px 16px",borderBottom:"1px solid var(--line)",fontFamily:"'JetBrains Mono',monospace",fontSize:12.5}}>
+            {trig!=null && <span style={{color:"var(--faint)"}}>Trigger <b style={{color:"var(--bone)"}}>${trig.toFixed(2)}</b></span>}
+            {stop!=null && <span style={{color:"var(--faint)"}}>Stop <b style={{color:"var(--bear)"}}>${stop.toFixed(2)}</b></span>}
+            {target!=null && <span style={{color:"var(--faint)"}}>Target 1:3 <b style={{color:"var(--bull)"}}>${target.toFixed(2)}</b></span>}
+            {r.strike && <span style={{color:"var(--faint)"}}>Contract <b style={{color:"var(--brass)"}}>${num(r.strike)} {up?"call":"put"}{r.dte?" · "+num(r.dte)+" DTE":""}</b></span>}
+          </div>
+        )}
+        <div style={{flex:1,minHeight:340,background:"#0b0e13"}}>
+          <iframe key={sym+iv} title={"chart-"+sym} src={embed} allowFullScreen style={{width:"100%",height:"100%",border:0,display:"block"}}/>
+        </div>
+        <div className="mono" style={{fontSize:10.5,color:"var(--faint)",padding:"8px 16px",borderTop:"1px solid var(--line)",lineHeight:1.5}}>Live chart via TradingView · the levels above are the app's read — draw them on the chart to confirm your trigger. Not financial advice.</div>
+      </div>
+    </div>
+  );
+}
+
 function RunnerScan({watch}){
   const [rows,setRows]=useState(null);
   const [loading,setLoading]=useState(false);
@@ -2990,6 +3035,7 @@ function RunnerScan({watch}){
   const [open,setOpen]=useState(null);
   const [seed,setSeed]=useState(null);
   const [minScore,setMinScore]=useState(0);
+  const [chart,setChart]=useState(null);
 
   useEffect(()=>{ (async()=>{ const s=await sGet("runner_scan"); if(s&&Array.isArray(s.rows)){ setRows(s.rows); setWhen(s.when||null); } })(); },[]);
 
@@ -3023,6 +3069,7 @@ dir="up"|"down". px=last close. atr=avg DAILY range in $ (~14d). comp/lvl/cat/fu
 
   return (
     <div>
+      {chart && <ChartModal row={chart} onClose={()=>setChart(null)}/>}
       <div className="card" style={{padding:20,marginBottom:16}}>
         <div className="eyebrow" style={{marginBottom:5}}>Runner scan</div>
         <div className="disp" style={{fontSize:25,fontWeight:800,marginBottom:8}}>Hunting the 1000% move</div>
@@ -3090,6 +3137,7 @@ dir="up"|"down". px=last close. atr=avg DAILY range in $ (~14d). comp/lvl/cat/fu
               <button className="btn btn-primary" style={{padding:"8px 13px",fontSize:13}}
                 onClick={()=>{ setSeed({_t:Date.now(),sym:r.s,spot:String(num(r.px)||""),strike:String(num(r.strike)||""),prem:String(num(r.prem)||""),atr:String(num(r.atr)||""),dte:String(num(r.dte)||""),dir:r.dir==="down"?"Put":"Call"});
                   const el=document.getElementById("tenx"); if(el) el.scrollIntoView({behavior:"smooth",block:"start"}); }}>Run the 10x math →</button>
+              <button className="btn" onClick={()=>setChart(r)} style={{padding:"8px 13px",fontSize:13}}>📈 Chart it for me</button>
               <LinkBar sym={r.s}/>
             </div>
 
