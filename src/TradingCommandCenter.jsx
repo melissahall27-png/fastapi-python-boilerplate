@@ -2981,7 +2981,86 @@ function TenXMath({seed}){
 }
 
 /* ---------- the scanner ---------- */
-/* In-app live chart (TradingView embed) + the app's read levels. */
+/* Self-drawn candlestick chart with the setup levels drawn ON the candles.
+   Bars come from /api/ohlc (server-side Yahoo fetch, no CORS). */
+function ChartDraw({sym,interval,levels,height=440}){
+  const wrapRef=useRef(null);
+  const [w,setW]=useState(720);
+  const [bars,setBars]=useState(null);
+  const [err,setErr]=useState("");
+  const [loading,setLoading]=useState(true);
+
+  useEffect(()=>{
+    const el=wrapRef.current; if(!el) return;
+    const measure=()=>setW(Math.max(280,el.clientWidth||720));
+    measure();
+    let ro; if(typeof ResizeObserver!=="undefined"){ ro=new ResizeObserver(measure); ro.observe(el); }
+    window.addEventListener("resize",measure);
+    return ()=>{ window.removeEventListener("resize",measure); if(ro) ro.disconnect(); };
+  },[]);
+
+  useEffect(()=>{
+    let dead=false;
+    const rangeFor={"15m":"5d","60m":"1mo","1d":"6mo"};
+    const iv=interval||"1d";
+    setLoading(true); setErr(""); setBars(null);
+    fetch(`/api/ohlc?symbol=${encodeURIComponent(sym)}&interval=${encodeURIComponent(iv)}&range=${rangeFor[iv]||"6mo"}`)
+      .then(r=>r.json().then(j=>({ok:r.ok,j})).catch(()=>({ok:false,j:null})))
+      .then(({ok,j})=>{ if(dead) return;
+        if(!ok||!j||!Array.isArray(j.bars)||!j.bars.length) setErr((j&&j.error)||("No chart data for "+sym+"."));
+        else setBars(j.bars.slice(-150));
+      })
+      .catch(()=>{ if(!dead) setErr("Couldn't load chart data."); })
+      .finally(()=>{ if(!dead) setLoading(false); });
+    return ()=>{ dead=true; };
+  },[sym,interval]);
+
+  const H=height, padL=6, padR=60, padT=10, padB=6;
+  const plotW=Math.max(60,w-padL-padR), plotH=H-padT-padB;
+  const box={height:H,display:"flex",alignItems:"center",justifyContent:"center",textAlign:"center",padding:20,color:"var(--faint)",fontSize:13};
+
+  let inner;
+  if(loading) inner=<div style={box}><span className="spin"/></div>;
+  else if(err) inner=<div style={box}>{err}</div>;
+  else if(bars&&bars.length){
+    const lv=levels||{};
+    const lvVals=[lv.trigger,lv.stop,lv.target,lv.level].map(Number).filter(v=>isFinite(v)&&v>0);
+    let lo=Math.min(...bars.map(b=>b.l),...(lvVals.length?lvVals:[Infinity]));
+    let hi=Math.max(...bars.map(b=>b.h),...(lvVals.length?lvVals:[-Infinity]));
+    if(!isFinite(lo)||!isFinite(hi)||hi<=lo){ lo=Math.min(...bars.map(b=>b.l)); hi=Math.max(...bars.map(b=>b.h)); }
+    const span=(hi-lo)||1; lo-=span*0.06; hi+=span*0.06;
+    const y=p=>padT+(hi-p)/(hi-lo)*plotH;
+    const n=bars.length, slot=plotW/n, bw=Math.max(1,Math.min(9,slot*0.62));
+    const cur=bars[bars.length-1].c;
+    const specs=[["Trigger",lv.trigger,"#e8ebef"],["Stop",lv.stop,"#dc2626"],["Target",lv.target,"#16a34a"],["Level",lv.level,"#f2be6e"]];
+    inner=(
+      <svg width={w} height={H} style={{display:"block"}}>
+        {[0,0.25,0.5,0.75,1].map((f,i)=>{ const yy=padT+f*plotH; const p=hi-(hi-lo)*f; return (
+          <g key={"g"+i}>
+            <line x1={padL} y1={yy} x2={padL+plotW} y2={yy} stroke="#232a34" strokeWidth="1"/>
+            <text x={padL+plotW+5} y={yy+3} fontSize="10" fill="#8892a0" fontFamily="monospace">{p.toFixed(2)}</text>
+          </g>);})}
+        {bars.map((b,i)=>{ const cx=padL+slot*i+slot/2; const up=b.c>=b.o; const col=up?"#16a34a":"#dc2626";
+          const yO=y(b.o),yC=y(b.c); const top=Math.min(yO,yC); const hgt=Math.max(1,Math.abs(yO-yC));
+          return (<g key={"c"+i}>
+            <line x1={cx} y1={y(b.h)} x2={cx} y2={y(b.l)} stroke={col} strokeWidth="1"/>
+            <rect x={cx-bw/2} y={top} width={bw} height={hgt} fill={col}/>
+          </g>);})}
+        <line x1={padL} y1={y(cur)} x2={padL+plotW} y2={y(cur)} stroke="#f2be6e" strokeWidth="1" strokeDasharray="1 3" opacity="0.6"/>
+        {specs.map(([lbl,val,c],i)=>{ const v=Number(val); if(val==null||!isFinite(v)||v<lo||v>hi) return null; const yy=y(v);
+          return (<g key={"L"+i}>
+            <line x1={padL} y1={yy} x2={padL+plotW} y2={yy} stroke={c} strokeWidth="1.3" strokeDasharray="5 4"/>
+            <rect x={padL+plotW-1} y={yy-8} width={60} height={13} fill={c} rx="2"/>
+            <text x={padL+plotW+3} y={yy+2} fontSize="9.5" fill="#0b0e13" fontFamily="monospace" fontWeight="700">{lbl} {v.toFixed(2)}</text>
+          </g>);})}
+      </svg>
+    );
+  } else inner=<div style={box}>No data.</div>;
+
+  return <div ref={wrapRef} style={{width:"100%"}}>{inner}</div>;
+}
+
+/* In-app chart: self-drawn candles with the setup levels on them, plus a TradingView deep-link. */
 function ChartModal({row,onClose}){
   const r=row||{};
   const sym=String(r.s||r.sym||"").toUpperCase();
@@ -3016,10 +3095,13 @@ function ChartModal({row,onClose}){
             {r.strike && <span style={{color:"var(--faint)"}}>Contract <b style={{color:"var(--brass)"}}>${num(r.strike)} {up?"call":"put"}{r.dte?" · "+num(r.dte)+" DTE":""}</b></span>}
           </div>
         )}
-        <div style={{flex:1,minHeight:340,background:"#0b0e13"}}>
-          <iframe key={sym+iv} title={"chart-"+sym} src={embed} allowFullScreen style={{width:"100%",height:"100%",border:0,display:"block"}}/>
+        <div style={{flex:1,minHeight:340,background:"#0b0e13",overflow:"auto"}}>
+          <ChartDraw sym={sym} interval={iv} levels={{trigger:trig,stop,target}}/>
         </div>
-        <div className="mono" style={{fontSize:10.5,color:"var(--faint)",padding:"8px 16px",borderTop:"1px solid var(--line)",lineHeight:1.5}}>Live chart via TradingView · the levels above are the app's read — draw them on the chart to confirm your trigger. Not financial advice.</div>
+        <div className="mono" style={{display:"flex",gap:12,flexWrap:"wrap",alignItems:"center",fontSize:10.5,color:"var(--faint)",padding:"8px 16px",borderTop:"1px solid var(--line)",lineHeight:1.5}}>
+          <span>Candles: Yahoo Finance · trigger / stop / target drawn are the app's read. Not financial advice.</span>
+          <a href={L.tv} target="_blank" rel="noopener noreferrer" style={{marginLeft:"auto",color:"var(--brass)",textDecoration:"none",whiteSpace:"nowrap"}}>Open full chart on TradingView ↗</a>
+        </div>
       </div>
     </div>
   );
