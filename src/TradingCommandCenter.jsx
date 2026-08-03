@@ -1856,13 +1856,46 @@ calendar = ONLY today's scheduled US releases that move equities (ISM, jobs/NFP,
   );
 }
 
+/* Reusable "Runners to watch" card — reads the last Runner scan, shows the strong
+   ones, and (with onChart) charts them. Shared by Today and Watchlist. */
+function RunnersToWatch({goRunner,onChart}){
+  const [runners,setRunners]=useState([]);
+  useEffect(()=>{ (async()=>{ try{ const s=await sGet("runner_scan"); if(s&&Array.isArray(s.rows)){ setRunners(s.rows.filter(r=>runnerScore(r)>=60).sort((a,b)=>runnerScore(b)-runnerScore(a)).slice(0,6)); } }catch(e){} })(); },[]);
+  if(!runners.length) return null;
+  return (
+    <div className="card" style={{padding:18,marginBottom:18,border:"1px solid var(--brass)"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,marginBottom:12,flexWrap:"wrap"}}>
+        <div>
+          <div className="eyebrow" style={{color:"var(--brass)"}}>🚀 Runners to watch</div>
+          <h3 className="disp" style={{margin:"3px 0 0",fontSize:18,fontWeight:700}}>{runners.length} 1000% candidate{runners.length===1?"":"s"} from your last scan</h3>
+        </div>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+          {onChart && <button className="btn btn-primary" onClick={()=>onChart(runners[0])} style={{padding:"6px 11px",fontSize:12.5}}>📈 Chart top</button>}
+          {goRunner && <button className="btn-ghost btn" onClick={goRunner}>Open Runner →</button>}
+        </div>
+      </div>
+      <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
+        {runners.map(r=>{ const sc=runnerScore(r); return (
+          <div key={r.s} style={{display:"flex",alignItems:"center",gap:8,padding:"7px 11px",background:"var(--bg)",border:"1px solid var(--line2)",borderRadius:9}}>
+            <span className="mono" style={{fontWeight:700,fontSize:14}}>{r.s}</span>
+            <span className="mono" style={{fontSize:12.5,color:r.dir==="up"?"var(--bull)":"var(--bear)"}}>{r.dir==="up"?"▲":"▼"}</span>
+            <span className="mono" style={{fontWeight:700,fontSize:12.5,color:scoreTone(sc)}}>{sc}</span>
+            {r.trig!=null && <span className="mono" style={{fontSize:11.5,color:"var(--faint)"}}>trig {num(r.trig)}</span>}
+            {onChart && <button className="btn" onClick={()=>onChart(r)} style={{padding:"3px 8px",fontSize:11}} title={"Chart "+r.s}>📈</button>}
+          </div>
+        );})}
+      </div>
+      <div className="mono" style={{fontSize:11.5,color:"var(--faint)",marginTop:10}}>From your last Runner scan{goRunner?" · Open Runner to set alerts →":""}</div>
+    </div>
+  );
+}
+
 function Today({trades,setTrades,watch,quotes,setQuotes,goJournal,goRunner}){
   const [brief,setBrief]=useState("");
   const [loadingB,setLoadingB]=useState(false);
   const [loadingQ,setLoadingQ]=useState(false);
   const [err,setErr]=useState("");
-  const [runnersToWatch,setRunnersToWatch]=useState([]);
-  useEffect(()=>{ (async()=>{ try{ const s=await sGet("runner_scan"); if(s&&Array.isArray(s.rows)){ setRunnersToWatch(s.rows.filter(r=>runnerScore(r)>=60).sort((a,b)=>runnerScore(b)-runnerScore(a)).slice(0,6)); } }catch(e){} })(); },[]);
+  const [todayChart,setTodayChart]=useState(null);
 
   const closed = trades.map(t=>({...t,pnl:computePnl(t)})).filter(t=>t.pnl!=null);
   const sow=startOfWeek();
@@ -1906,29 +1939,8 @@ function Today({trades,setTrades,watch,quotes,setQuotes,goJournal,goRunner}){
     <div>
       <div style={{marginBottom:18}}><Goals trades={trades} setTrades={setTrades} watch={watch}/></div>
 
-      {runnersToWatch.length>0 && (
-        <div className="card" onClick={goRunner} style={{padding:18,marginBottom:18,cursor:"pointer",border:"1px solid var(--brass)"}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,marginBottom:12}}>
-            <div>
-              <div className="eyebrow" style={{color:"var(--brass)"}}>🚀 Runners to watch</div>
-              <h3 className="disp" style={{margin:"3px 0 0",fontSize:18,fontWeight:700}}>{runnersToWatch.length} 1000% candidate{runnersToWatch.length===1?"":"s"} from your last scan</h3>
-            </div>
-            <button className="btn-ghost btn" onClick={(e)=>{e.stopPropagation();goRunner&&goRunner();}}>Open Runner →</button>
-          </div>
-          <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
-            {runnersToWatch.map(r=>{ const sc=runnerScore(r); return (
-              <div key={r.s} style={{display:"flex",alignItems:"center",gap:8,padding:"7px 11px",background:"var(--bg)",border:"1px solid var(--line2)",borderRadius:9}}>
-                <span className="mono" style={{fontWeight:700,fontSize:14}}>{r.s}</span>
-                <span className="mono" style={{fontSize:12.5,color:r.dir==="up"?"var(--bull)":"var(--bear)"}}>{r.dir==="up"?"▲":"▼"}</span>
-                <span className="mono" style={{fontWeight:700,fontSize:12.5,color:scoreTone(sc)}}>{sc}</span>
-                {r.trig!=null && <span className="mono" style={{fontSize:11.5,color:"var(--faint)"}}>trig {num(r.trig)}</span>}
-                {r.ev && String(r.ev).toLowerCase()!=="none" && <span className="tag" style={{fontSize:10.5}}>{r.ev}</span>}
-              </div>
-            );})}
-          </div>
-          <div className="mono" style={{fontSize:11.5,color:"var(--faint)",marginTop:10}}>From your last Runner scan · tap to open the 10-bagger hunter and set alerts →</div>
-        </div>
-      )}
+      {todayChart && <ChartModal row={todayChart} onClose={()=>setTodayChart(null)}/>}
+      <RunnersToWatch goRunner={goRunner} onChart={setTodayChart}/>
 
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:12,marginBottom:18}}>
         <Stat label="Week P&L" value={fmtMoney(wk)} tone={wk} help="Your total profit/loss on trades closed since Monday. Green = up week, red = down week." />
@@ -3342,6 +3354,7 @@ function Watchlist({watch,setWatch,quotes,setQuotes}){
   const [bulk,setBulk]=useState(null); // {done,total,finished} while digging all
   const [bias,setBias]=useState({}); const [scanning,setScanning]=useState(false);
   const [scanData,setScanData]=useState(null);
+  const [chartRow,setChartRow]=useState(null);
   useEffect(()=>{ setScanData(null); },[sel]);
   useEffect(()=>{(async()=>{ const b=await sGet("watch:bias"); if(b&&typeof b==="object") setBias(b); })();},[]);
   async function scanBias(){
@@ -3403,6 +3416,8 @@ function Watchlist({watch,setWatch,quotes,setQuotes}){
 
   return (
     <div>
+      {chartRow && <ChartModal row={chartRow} onClose={()=>setChartRow(null)}/>}
+      <RunnersToWatch onChart={setChartRow}/>
       {/* Chart & trade panel for selected symbol */}
       <div className="card" style={{padding:18,marginBottom:16}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:12}}>
@@ -3419,6 +3434,7 @@ function Watchlist({watch,setWatch,quotes,setQuotes}){
 
         {/* launch links */}
         <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:14}}>
+          <button onClick={()=>setChartRow({s:sel})} style={{...openA,color:"#0E1116",background:"var(--brass)",borderColor:"var(--brass)",cursor:"pointer"}}>📈 Chart it for me</button>
           <a href={L.tv} target="_blank" rel="noopener" style={{...openA,color:"var(--focus)",borderColor:"var(--focus)"}}>📈 TradingView chart ↗</a>
           <a href={L.rh} target="_blank" rel="noopener" style={{...openA,color:"var(--bone)"}}>Robinhood ↗</a>
           <a href={L.wb} target="_blank" rel="noopener" style={{...openA,color:"var(--bone)"}}>Webull ↗</a>
@@ -3483,6 +3499,7 @@ function Watchlist({watch,setWatch,quotes,setQuotes}){
               </div>
               <div className="mono" style={{fontSize:22,fontWeight:600,color:col,marginTop:8,lineHeight:1}}>{q?.price!=null?Number(q.price).toFixed(2):"—"}</div>
               <div className="mono" style={{fontSize:13.5,color:col,marginTop:4,marginBottom:10}}>{pct==null?"no quote":(pct>=0?"▲ +":"▼ ")+pct.toFixed(2)+"%"}</div>
+              <button className="btn" onClick={e=>{e.stopPropagation();setChartRow({s});}} style={{width:"100%",padding:"6px 0",fontSize:12,marginBottom:8}}>📈 Chart it for me</button>
               <LinkBar sym={s}/>
             </div>
           );
