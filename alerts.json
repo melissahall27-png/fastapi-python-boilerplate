@@ -1,0 +1,4 @@
+[
+  { "sym": "IWM", "op": "above", "price": 293.0, "note": "breakout trigger" },
+  { "sym": "IWM", "op": "below", "price": 289.0, "note": "breakdown / stop zone" }
+]
