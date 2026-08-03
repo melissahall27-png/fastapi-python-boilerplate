@@ -496,7 +496,7 @@ export default function TradingCommandCenter(){
       {/* Body */}
       <div style={{maxWidth:1180,margin:"0 auto",padding:"22px 20px 80px"}}>
         {tab==="guide" && <Guide/>}
-        {tab==="today" && <Today trades={trades} setTrades={setTrades} watch={watch} quotes={quotes} setQuotes={setQuotes} goJournal={()=>setTab("journal")} />}
+        {tab==="today" && <Today trades={trades} setTrades={setTrades} watch={watch} quotes={quotes} setQuotes={setQuotes} goJournal={()=>setTab("journal")} goRunner={()=>setTab("runner")} />}
         {tab==="dash" && <Dashboard trades={trades} goJournal={()=>setTab("journal")} />}
         {tab==="journal" && <Journal trades={trades} setTrades={setTrades} watch={watch} />}
         {tab==="review" && <ReviewPanel trades={trades} />}
@@ -1855,11 +1855,13 @@ calendar = ONLY today's scheduled US releases that move equities (ISM, jobs/NFP,
   );
 }
 
-function Today({trades,setTrades,watch,quotes,setQuotes,goJournal}){
+function Today({trades,setTrades,watch,quotes,setQuotes,goJournal,goRunner}){
   const [brief,setBrief]=useState("");
   const [loadingB,setLoadingB]=useState(false);
   const [loadingQ,setLoadingQ]=useState(false);
   const [err,setErr]=useState("");
+  const [runnersToWatch,setRunnersToWatch]=useState([]);
+  useEffect(()=>{ (async()=>{ try{ const s=await sGet("runner_scan"); if(s&&Array.isArray(s.rows)){ setRunnersToWatch(s.rows.filter(r=>runnerScore(r)>=60).sort((a,b)=>runnerScore(b)-runnerScore(a)).slice(0,6)); } }catch(e){} })(); },[]);
 
   const closed = trades.map(t=>({...t,pnl:computePnl(t)})).filter(t=>t.pnl!=null);
   const sow=startOfWeek();
@@ -1902,6 +1904,30 @@ function Today({trades,setTrades,watch,quotes,setQuotes,goJournal}){
   return (
     <div>
       <div style={{marginBottom:18}}><Goals trades={trades} setTrades={setTrades} watch={watch}/></div>
+
+      {runnersToWatch.length>0 && (
+        <div className="card" onClick={goRunner} style={{padding:18,marginBottom:18,cursor:"pointer",border:"1px solid var(--brass)"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,marginBottom:12}}>
+            <div>
+              <div className="eyebrow" style={{color:"var(--brass)"}}>🚀 Runners to watch</div>
+              <h3 className="disp" style={{margin:"3px 0 0",fontSize:18,fontWeight:700}}>{runnersToWatch.length} 1000% candidate{runnersToWatch.length===1?"":"s"} from your last scan</h3>
+            </div>
+            <button className="btn-ghost btn" onClick={(e)=>{e.stopPropagation();goRunner&&goRunner();}}>Open Runner →</button>
+          </div>
+          <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
+            {runnersToWatch.map(r=>{ const sc=runnerScore(r); return (
+              <div key={r.s} style={{display:"flex",alignItems:"center",gap:8,padding:"7px 11px",background:"var(--bg)",border:"1px solid var(--line2)",borderRadius:9}}>
+                <span className="mono" style={{fontWeight:700,fontSize:14}}>{r.s}</span>
+                <span className="mono" style={{fontSize:12.5,color:r.dir==="up"?"var(--bull)":"var(--bear)"}}>{r.dir==="up"?"▲":"▼"}</span>
+                <span className="mono" style={{fontWeight:700,fontSize:12.5,color:scoreTone(sc)}}>{sc}</span>
+                {r.trig!=null && <span className="mono" style={{fontSize:11.5,color:"var(--faint)"}}>trig {num(r.trig)}</span>}
+                {r.ev && String(r.ev).toLowerCase()!=="none" && <span className="tag" style={{fontSize:10.5}}>{r.ev}</span>}
+              </div>
+            );})}
+          </div>
+          <div className="mono" style={{fontSize:11.5,color:"var(--faint)",marginTop:10}}>From your last Runner scan · tap to open the 10-bagger hunter and set alerts →</div>
+        </div>
+      )}
 
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:12,marginBottom:18}}>
         <Stat label="Week P&L" value={fmtMoney(wk)} tone={wk} help="Your total profit/loss on trades closed since Monday. Green = up week, red = down week." />
