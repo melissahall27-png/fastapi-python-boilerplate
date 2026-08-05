@@ -3303,7 +3303,11 @@ function ScanJournal({trades}){
             </div>
             {open && <div style={{marginTop:12,paddingTop:12,borderTop:"1px solid var(--line)"}}>
               <div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:tl.length?12:0}}>
-                {((s.top&&s.top.length)?s.top:(s.syms||[]).map(x=>({s:x}))).map((it,i)=>(
+                {/* Show EVERY ticker from the scan, not just the top few; carry the score/note onto the ones that have it. */}
+                {((s.syms&&s.syms.length)
+                    ? s.syms.map(sym=>{ const hit=(s.top||[]).find(x=>String(x.s).toUpperCase()===String(sym).toUpperCase()); return {s:sym, note:hit&&hit.note}; })
+                    : (s.top||[])
+                  ).map((it,i)=>(
                   <span key={i} className="mono" style={{fontSize:12.5,background:"var(--bg)",border:"1px solid var(--line2)",borderRadius:8,padding:"5px 10px"}}>
                     <b style={{color:"var(--bone)"}}>{it.s}</b>{it.note?<span style={{color:"var(--faint)"}}> · {it.note}</span>:null}
                   </span>))}
