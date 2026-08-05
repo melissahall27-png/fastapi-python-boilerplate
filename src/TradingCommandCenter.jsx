@@ -110,6 +110,58 @@ async function sSet(key,val){
   catch(e){ mem[key] = val; }   // private mode / quota full -> session-only
 }
 
+/* ---------- text (SMS) alerts ----------
+   The browser holds no Twilio secret — it POSTs the message to /api/sms, which
+   attaches the account credentials from the Vercel environment and sends it.
+   sendTextRaw fires regardless of the on/off switch (used by the "Send test"
+   button); sendText is the gated everyday path used by the scan/news triggers. */
+async function sendTextRaw(text,to){
+  try{
+    if(!to) return {ok:false,reason:"no-phone"};
+    const r=await fetch("/api/sms",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({text:String(text||"").slice(0,600),to:String(to)})});
+    return await r.json().catch(()=>({ok:false,reason:"bad-json"}));
+  }catch(e){ return {ok:false,reason:"err"}; }
+}
+async function sendText(text){
+  try{
+    if(!(await sGet("alerts:on"))) return {ok:false,reason:"off"};
+    const to=await sGet("alerts:phone");
+    if(!to) return {ok:false,reason:"no-phone"};
+    return await sendTextRaw(text,to);
+  }catch(e){ return {ok:false,reason:"err"}; }
+}
+// Text the top runner picks right after a scan finishes.
+async function alertRunnerPicks(rows){
+  try{
+    if(!(await sGet("alerts:on")) || !(await sGet("alerts:phone"))) return;
+    const top=[...(rows||[])].sort((a,b)=>runnerScore(b)-runnerScore(a)).slice(0,3);
+    if(!top.length) return;
+    const body="🚀 Runner picks\n"+top.map(r=>`• ${r.s} ${r.dir==="down"?"puts":"calls"} — score ${runnerScore(r)}`+(r.trig!=null?`, trig $${num(r.trig).toFixed(2)}`:"")).join("\n");
+    await sendText(body);
+  }catch(e){}
+}
+// Text only headlines that appeared AFTER alerts were switched on. The first
+// pass with alerts on seeds a baseline (no text) so we don't dump the whole feed.
+async function alertNews(items){
+  try{
+    if(!(await sGet("alerts:on")) || !(await sGet("alerts:phone"))) return;
+    const arr=Array.isArray(items)?items:[];
+    const keyOf=n=>String((n&&n.headline)||"").toLowerCase().slice(0,120);
+    const keys=arr.map(keyOf).filter(Boolean);
+    if(!keys.length) return;
+    const sent=await sGet("alerts:newsSent");
+    if(!Array.isArray(sent)){ await sSet("alerts:newsSent", keys.slice(0,120)); return; } // baseline
+    const seen=new Set(sent);
+    const fresh=arr.filter(n=>{ const k=keyOf(n); return k && !seen.has(k); });
+    if(!fresh.length) return;
+    const pick=fresh.slice(0,4);
+    const body="📰 Watchlist news\n"+pick.map(n=>`• ${n.ticker||"MKT"}: ${n.headline}`).join("\n");
+    await sendText(body);
+    await sSet("alerts:newsSent", [...keys, ...sent].slice(0,120));
+  }catch(e){}
+}
+
 /* ---------- auto-run scans ----------
    Prices are free (Yahoo) and refresh on their own, but each SCAN is a paid AI
    call, so scans never auto-run unless the user turns ⏱ Auto ON. When it's on, a
@@ -595,7 +647,7 @@ function NewsTape({watch}){
   const key=(watch||[]).join(",");
   useEffect(()=>{
     let live=true;
-    async function load(){ if(!key) return; try{ const r=await fetch(`/api/news?symbols=${encodeURIComponent(key)}`); const j=await r.json().catch(()=>null); if(live&&j&&Array.isArray(j.items)) setNews(j.items.slice(0,20)); }catch(e){} }
+    async function load(){ if(!key) return; try{ const r=await fetch(`/api/news?symbols=${encodeURIComponent(key)}`); const j=await r.json().catch(()=>null); if(live&&j&&Array.isArray(j.items)){ setNews(j.items.slice(0,20)); alertNews(j.items); } }catch(e){} }
     load(); const id=setInterval(load, 5*60*1000); return ()=>{ live=false; clearInterval(id); };
   },[key]);
   const items=[
