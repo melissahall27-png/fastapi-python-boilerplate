@@ -2,6 +2,32 @@ import React, { useState, useRef } from "react";
 import { createRoot } from "react-dom/client";
 import TradingCommandCenter, { TCC_PREFIX } from "./TradingCommandCenter.jsx";
 
+/* Self-heal a stale cached bundle: fetch the freshest index.html (bypassing
+   cache) and compare the hashed JS filename it references to the one actually
+   running. If they differ, this tab is on an old build — reload once to pick up
+   the latest. A sessionStorage guard prevents a reload loop if it can't recover. */
+async function ensureFreshBuild() {
+  try {
+    const running = (import.meta.url.split("/").pop() || "").split("?")[0];
+    if (!running) return;
+    const res = await fetch("/?_=" + Date.now(), { cache: "no-store" });
+    if (!res.ok) return;
+    const html = await res.text();
+    const m = html.match(/assets\/[A-Za-z0-9_.-]+\.js/);
+    const latest = m ? m[0].split("/").pop() : null;
+    if (latest && latest !== running) {
+      if (!sessionStorage.getItem("tcc:staleReload")) {
+        sessionStorage.setItem("tcc:staleReload", "1");
+        location.reload();
+      }
+    } else {
+      sessionStorage.removeItem("tcc:staleReload");
+    }
+  } catch (e) { /* offline / blocked — ignore */ }
+}
+ensureFreshBuild();
+setInterval(ensureFreshBuild, 5 * 60 * 1000);
+
 /* localStorage is per-browser: the journal you build on your phone is invisible
    on your laptop, and clearing site data wipes it. This bar is the way across. */
 
