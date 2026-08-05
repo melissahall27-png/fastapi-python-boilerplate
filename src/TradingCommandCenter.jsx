@@ -1235,21 +1235,25 @@ const TICKET=[
   "Actual fill — record what you really placed, and your true P&L vs the plan",
   "A per-trade coach chat that knows this exact setup",
 ];
-const TAB_GUIDE=[
-  ["Guide","You’re here — how the whole system fits together."],
-  ["Today","Your command center: profit Goals with the 🧮 goal calculator and Build-my-account planner, overnight index Futures, one-tap coaching, the Examine calculator(s) with “+ Add another trade,” your stats, and notes."],
-  ["Dashboard","Your scoreboard: equity curve, profit/loss ratio, win %, and a full trade table from your real journal."],
-  ["Journal","Log trades (fastest from a screenshot), grade A–F, mark on/off-plan, and see which setups actually pay."],
-  ["Review","All-time totals and weekly recaps of what you did."],
-  ["Watchlist","30+ tickers. Scan bias, open a live chart, see intraday flow timing (when calls vs puts peak), the largest holders + news, a full 🔍 Deep Dive, and the scanner + calculator on any ticker."],
-  ["Strat","D/W/M/Q continuity screener — flags Nirvana (1-3), Holy Grail (3-1) and full-continuity names across your watchlist, with a ? read on every ticker."],
-  ["Runner","The 10-bagger hunter \u2014 grades your list on compression, level, catalyst and premium fuel, then makes you run the 10x math before you buy."],
-  ["Sectors","Sector rotation board and charts — where the money’s flowing."],
-  ["Tools","Pivot calculator, expected-move (std-dev), key levels, and a ticker finder."],
-  ["News","An AI news wire tagged bull/bear, plus a 🔍 Deep Dive research box for any ticker."],
-  ["Playbook","Your foundation: first steps, the 3 strategy questions, the options playbook, diagrams, and the full glossary."],
-  ["Tutor","Your learning path — checklist + video links with a progress tracker — plus train-the-coach and a tutor chat."],
+const WALK=[
+  {t:"Guide",w:"You're here — the map. It explains the daily loop, the trade ticket, the rules that run through everything, and this step-by-step tour of every tab.",l:"Points you into <b>every</b> other tab. Start here whenever you're unsure where something lives."},
+  {t:"Today",w:"Your daily command center and first stop. It holds your profit <b>Goals</b> + account planner, overnight <b>Futures</b>, an auto-loading <b>Watchlist news</b> panel, one-tap coaching, the <b>Examine</b> trade calculator(s), your live stats, notes, and the top <b>Runners to watch</b>.",l:"Prices &amp; news come from your <b>Watchlist</b> tickers · the stats read from your <b>Journal</b> · Examine logs into the <b>Journal</b> · Goals track against the <b>Journal</b> · Runners-to-watch jumps to the <b>Runner</b> tab · the coach is the same brain as <b>Tutor</b>."},
+  {t:"Dashboard",w:"Your scoreboard: equity curve, profit/loss ratio, win %, and the full trade table.",l:"Reads entirely from the <b>Journal</b> — every number here updates the moment you log a trade in <b>Journal</b>."},
+  {t:"Journal",w:"The record everything else is built on. Log trades (fastest from a screenshot), grade A–F, mark on/off-plan, and see P&amp;L by setup.",l:"Feeds the <b>Dashboard</b>, <b>Review</b>, <b>Today</b> stats and <b>Goals</b> · the <b>Scans</b> journal matches your trades back to the scan that surfaced them."},
+  {t:"Review",w:"The step-back view: all-time totals and weekly recaps of what you actually did.",l:"Summarizes your <b>Journal</b> over time — a companion to the live numbers on the <b>Dashboard</b>."},
+  {t:"Watchlist",w:"Your 30+ tickers. Scan structural bias (with the ⏱ Auto option), open a live <b>chart</b> with your trigger/stop/target drawn, see intraday flow timing, the largest holders + news, a full 🔍 Deep Dive, and the scanner + Examine calculator on any name.",l:"Its tickers drive <b>Today</b> (quotes + news), <b>Strat</b>, <b>Runner</b>, <b>Scans</b>, <b>News</b> and <b>Sectors</b> · the chart it opens is the same one used elsewhere (with the 📉 P/L toggle) · Examine here logs to the <b>Journal</b>."},
+  {t:"Strat",w:"The Daily/Weekly/Monthly/Quarterly continuity screener — flags Nirvana (1-3), Holy Grail (3-1) and full-continuity (FTFC) names, with a ? read on every ticker.",l:"Scans your <b>Watchlist</b> · tap a name into <b>Watchlist</b> to confirm on the chart · every pattern it names is defined in the <b>Playbook</b> and taught in the <b>Tutor</b> course."},
+  {t:"Runner",w:"The 10-bagger hunter — grades your list on compression, level, catalyst and premium fuel, makes you run the 10x math, and now draws a 📉 <b>P/L curve</b> on each candidate contract.",l:"Uses your <b>Watchlist</b> tickers · 'Chart it' opens the shared chart · 'Run the 10x math' feeds the calculator · every scan auto-saves to <b>Scans</b> · the P/L curve is the same engine as the <b>P/L</b> tab."},
+  {t:"Scans",w:"Your scan journal: every scan you run (Runner, Watchlist bias, goal &amp; account plays) is saved automatically, matched to the trades you took, and scored — so you learn which scanner actually pays. Includes Ask-the-coach.",l:"Collects from all the scanners in <b>Runner</b>, <b>Watchlist</b> and <b>Today</b> · matches against your <b>Journal</b> trades · the ⏱ Auto toggle controls whether Runner/Watchlist re-scan on open."},
+  {t:"Sectors",w:"The rotation board — sector performance and charts, so you see where money is flowing.",l:"Tells you which of your <b>Watchlist</b> names are in a strong or weak group before you trade them."},
+  {t:"Tools",w:"Your calculators: pivot points, expected-move (standard deviation) bands, auto-filled key levels, and a ticker finder.",l:"Key levels feed your read on the <b>Watchlist</b> chart · expected-move is the same idea as the band in the <b>P/L</b> tab · the finder adds names to your <b>Watchlist</b>."},
+  {t:"P/L",w:"The payoff lab — build any options position leg by leg (long call, spread, straddle, calendar, iron condor) and see its profit/loss curve, breakevens, max win/loss and the expected-move band.",l:"The same compact curve is embedded in <b>Runner</b> cards and the <b>chart</b> modal (📉 P/L) · use it to vet a contract before you take it and log it to the <b>Journal</b>."},
+  {t:"News",w:"The wire, two ways: ⚡ a free Yahoo feed (instant, no AI) and 🧠 an AI wire tagged bull/bear — for your watchlist or the broad market — plus a 🔍 Deep Dive box.",l:"The free feed also auto-shows on <b>Today</b> · both use your <b>Watchlist</b> tickers · Deep Dive pairs with the research on the <b>Watchlist</b> tab."},
+  {t:"Playbook",w:"Your reference: first steps, the three strategy questions, the options playbook, and the full <b>illustrated glossary</b> — every term shown with its own diagram.",l:"Defines everything the <b>Strat</b>, <b>Runner</b> and <b>Scans</b> tabs flag · the <b>Tutor</b> course teaches this glossary lesson by lesson."},
+  {t:"Library",w:"Your study shelf: saved videos, playlists, charts, watchlists and tools (Finviz, Stock Market Watch) — plus anything you add and rename yourself.",l:"Your personal store beside the structured learning in the <b>Playbook</b> and <b>Tutor</b>."},
+  {t:"Tutor",w:"The course + your coach. A 10-lesson course where each lesson (concepts shown with diagrams) is followed by its own graded test, with a progress tracker — plus train-the-coach and a tutor chat.",l:"Teaches the <b>Playbook</b> glossary · the coach it trains is the same one behind Examine on <b>Today</b> and Ask-the-coach in <b>Scans</b>/<b>Runner</b> · your test scores track your progress."},
 ];
+
 const PLAN=[
   "Set a profit goal for any timeframe — daily to annual — and the rest scale automatically, with live progress from your journal",
   "🧮 Goal calculator — enter your target + reward:risk; it shows the risk per trade, and at each win rate the risk/avg-win it takes (plus the account size each needs at your risk %)",
@@ -1290,9 +1294,10 @@ function Guide(){
       </div>
 
       <div className="card" style={{padding:22}}>
-        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}><div><div className="eyebrow" style={{marginBottom:4}}>Contents</div><h3 className="disp" style={{margin:0,fontSize:19,fontWeight:700}}>The tabs</h3></div><Help text="What each tab is for. Tap one to expand its description."/></div>
+        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}><div><div className="eyebrow" style={{marginBottom:4}}>Step by step</div><h3 className="disp" style={{margin:0,fontSize:19,fontWeight:700}}>Every tab, and how they link</h3></div><Help text="A walkthrough of all 16 tabs in the order they sit in the nav — what each one does and which other tabs it feeds or pulls from. Tap any tab to expand."/></div>
+        <p style={{margin:"8px 0 14px",fontSize:14,color:"var(--dim)",lineHeight:1.5}}>Read top to bottom, or tap any tab. Each shows what it does and how it connects to the rest.</p>
         <div style={{display:"flex",flexDirection:"column",gap:8}}>
-          {TAB_GUIDE.map(([t,d])=><StepRow key={t} n={"•"} title={t} detail={d}/>)}
+          {WALK.map((x,i)=><WalkRow key={x.t} i={i+1} t={x.t} w={x.w} l={x.l}/>)}
         </div>
       </div>
 
@@ -5185,6 +5190,22 @@ function VolumeCard(){
   );
 }
 
+function WalkRow({i,t,w,l}){
+  const [open,setOpen]=useState(false);
+  return (
+    <div style={{border:"1px solid "+(open?"var(--line2)":"var(--line)"),borderRadius:11,overflow:"hidden",background:open?"var(--bg)":"transparent"}}>
+      <button onClick={()=>setOpen(o=>!o)} style={{width:"100%",display:"flex",gap:12,alignItems:"center",padding:"12px 14px",background:"transparent",border:"none",cursor:"pointer",textAlign:"left"}}>
+        <span className="mono" style={{fontSize:13.5,fontWeight:800,color:"var(--brass)",flexShrink:0,minWidth:20}}>{i}</span>
+        <span className="disp" style={{fontSize:15.5,fontWeight:700,color:"var(--bone)",flex:1,lineHeight:1.3}}>{t}</span>
+        <span className="mono" style={{fontSize:15,color:open?"var(--brass)":"var(--dim)",flexShrink:0,display:"inline-block",transform:open?"rotate(90deg)":"none",transition:"transform .15s"}}>›</span>
+      </button>
+      {open && <div style={{padding:"0 14px 13px 46px"}}>
+        <div style={{fontSize:14,color:"var(--dim)",lineHeight:1.6,marginBottom:9}} dangerouslySetInnerHTML={{__html:w}}/>
+        <div style={{fontSize:13,color:"var(--comp)",lineHeight:1.6,padding:"9px 11px",background:"rgba(227,168,87,0.06)",border:"1px solid var(--brass-dim)",borderRadius:9}}><b style={{color:"var(--brass)"}}>🔗 Works with:</b> <span dangerouslySetInnerHTML={{__html:l}}/></div>
+      </div>}
+    </div>
+  );
+}
 function StepRow({n,title,detail,color}){
   const [open,setOpen]=useState(false);
   return (
