@@ -501,6 +501,7 @@ export default function TradingCommandCenter(){
     <div className="tcc" style={{minHeight:"100vh"}}>
       <style>{STYLE}</style>
       <TickerTape watch={watch} quotes={quotes} />
+      <NewsTape watch={watch} />
 
       {/* Header */}
       <div style={{maxWidth:1180,margin:"0 auto",padding:"22px 20px 0"}}>
@@ -585,6 +586,47 @@ function TickerTape({watch,quotes}){
   );
 }
 
+/* Scrolling news + runners ticker — headlines for your watchlist (free Yahoo
+   feed) and your latest runner picks, streaming across the top like the price tape. */
+function NewsTape({watch}){
+  const [news,setNews]=useState([]);
+  const [runners,setRunners]=useState([]);
+  useEffect(()=>{ (async()=>{ const r=await sGet("runner_scan"); if(r&&Array.isArray(r.rows)) setRunners(r.rows.slice(0,8)); })(); },[]);
+  const key=(watch||[]).join(",");
+  useEffect(()=>{
+    let live=true;
+    async function load(){ if(!key) return; try{ const r=await fetch(`/api/news?symbols=${encodeURIComponent(key)}`); const j=await r.json().catch(()=>null); if(live&&j&&Array.isArray(j.items)) setNews(j.items.slice(0,20)); }catch(e){} }
+    load(); const id=setInterval(load, 5*60*1000); return ()=>{ live=false; clearInterval(id); };
+  },[key]);
+  const items=[
+    ...runners.map(r=>({type:"runner",sym:r.s,dir:r.dir,score:runnerScore(r)})),
+    ...news.map(n=>({type:"news",sym:n.ticker,headline:n.headline,link:n.link,source:n.source})),
+  ];
+  if(!items.length) return null;
+  const cell=(it,i)=> it.type==="runner"
+    ? <span key={"c"+i} className="mono" style={{display:"inline-flex",alignItems:"baseline",gap:7,padding:"0 20px",fontSize:13,borderRight:"1px solid var(--line)"}}>
+        <span style={{color:"var(--brass)",fontWeight:700}}>🚀 {it.sym}</span>
+        <span style={{color:it.dir==="down"?"var(--bear)":"var(--bull)"}}>{it.dir==="down"?"puts":"calls"}</span>
+        <span style={{color:"var(--faint)"}}>runner {it.score}</span>
+      </span>
+    : <a key={"c"+i} href={it.link||undefined} target="_blank" rel="noopener" className="mono" style={{display:"inline-flex",alignItems:"baseline",gap:8,padding:"0 20px",fontSize:13,borderRight:"1px solid var(--line)",textDecoration:"none"}}>
+        <b style={{color:"var(--brass)",fontWeight:700}}>{it.sym||"MKT"}</b>
+        <span style={{color:"var(--bone)"}}>{it.headline}</span>
+        {it.source && <span style={{color:"var(--faint)"}}>· {it.source}</span>}
+      </a>;
+  const dur=Math.max(50, items.length*8);
+  return (
+    <div style={{display:"flex",alignItems:"center",background:"var(--bg)",borderBottom:"1px solid var(--line)"}}>
+      <span className="mono" style={{fontSize:9.5,letterSpacing:"0.16em",color:"var(--brass-dim)",padding:"0 11px",flexShrink:0,borderRight:"1px solid var(--line)"}}>📰 NEWS</span>
+      <div style={{overflow:"hidden",flex:1,padding:"7px 0"}}>
+        <div className="tape-track" style={{animationDuration:dur+"s"}}>
+          {items.map((it,i)=>cell(it,i))}
+          {items.map((it,i)=>cell(it,"b"+i))}
+        </div>
+      </div>
+    </div>
+  );
+}
 /* ============================ TODAY ============================ */
 const HelpCtx=React.createContext(true);
 function Help({text,align="right"}){
