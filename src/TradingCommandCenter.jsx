@@ -550,7 +550,7 @@ export default function TradingCommandCenter(){
         {tab==="scans" && <ScanJournal trades={trades} />}
         {tab==="sectors" && <Sectors quotes={quotes} setQuotes={setQuotes} />}
         {tab==="tools" && <Tools watch={watch} setWatch={setWatch} />}
-        {tab==="pl" && <PayoffLab />}
+        {tab==="pl" && <PayoffLab watch={watch} />}
         {tab==="news" && <News watch={watch} />}
         {tab==="play" && <Playbook />}
         {tab==="library" && <KnowledgeLibrary />}
@@ -5661,7 +5661,7 @@ const PL_PRESETS={
   calendar:{name:"Calendar spread",legs:[{dir:"buy",type:"call",strike:700,qty:1,dte:38,prem:5.13},{dir:"sell",type:"call",strike:700,qty:1,dte:10,prem:0.80}]},
   condor:{name:"Iron condor",legs:[{dir:"sell",type:"put",strike:660,qty:1,dte:30,prem:6},{dir:"buy",type:"put",strike:640,qty:1,dte:30,prem:3},{dir:"sell",type:"call",strike:720,qty:1,dte:30,prem:6},{dir:"buy",type:"call",strike:740,qty:1,dte:30,prem:3}]},
 };
-function PayoffLab(){
+function PayoffLab({watch}){
   const [sym,setSym]=useState("");
   const [spot,setSpot]=useState("690");
   const [iv,setIv]=useState("28");
@@ -5675,8 +5675,8 @@ function PayoffLab(){
   const setLeg=(id,k,v)=>setLegs(ls=>ls.map(l=>l.id===id?{...l,[k]:v}:l));
   const addLeg=()=>setLegs(ls=>[...ls,{id:Date.now(),dir:"buy",type:"call",strike:Math.round(num(spot)||700),qty:1,dte:30,prem:5}]);
   const delLeg=id=>setLegs(ls=>ls.filter(l=>l.id!==id));
-  async function fetchPrice(){
-    const s=sym.trim().toUpperCase(); if(!s) return; setFetching(true); setNote("");
+  async function fetchPrice(override){
+    const s=String(override!=null?override:sym).trim().toUpperCase(); if(!s) return; setFetching(true); setNote("");
     try{ const r=await fetch(`/api/quotes?symbols=${encodeURIComponent(s)}`); const j=await r.json();
       const q=j&&j.quotes&&j.quotes[s]; if(q&&q.price){ setSpot(String(Math.round(q.price*100)/100)); setNote(`${s} @ $${q.price.toFixed(2)} (last)`);} else setNote("No price — enter it manually."); }
     catch(e){ setNote("Couldn't fetch — enter it manually."); }
@@ -5699,7 +5699,13 @@ function PayoffLab(){
           {Object.entries(PL_PRESETS).map(([k,p])=><button key={k} className="btn" onClick={()=>preset(k)} style={{padding:"6px 11px",fontSize:12.5}}>{p.name}</button>)}
         </div>
         <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"flex-end"}}>
-          <div><div className="eyebrow" style={{fontSize:10,marginBottom:3}}>Symbol (optional)</div><div style={{display:"flex",gap:6}}><input value={sym} onChange={e=>setSym(e.target.value)} placeholder="SPX" style={{...fld,width:90}}/><button className="btn" onClick={fetchPrice} disabled={fetching} style={{padding:"7px 10px",fontSize:12.5}}>{fetching?<span className="spin"/>:"Price"}</button></div></div>
+          <div><div className="eyebrow" style={{fontSize:10,marginBottom:3}}>Ticker (optional)</div><div style={{display:"flex",gap:6}}>
+            <select value={sym} onChange={e=>{ const v=e.target.value; setSym(v); if(v) fetchPrice(v); }} style={{...fld,width:130,appearance:"auto",color:sym?"var(--bone)":"var(--faint)"}}>
+              <option value="">— pick ticker —</option>
+              {(watch||[]).map(s=><option key={s} value={s}>{s}</option>)}
+            </select>
+            <button className="btn" onClick={()=>fetchPrice()} disabled={fetching||!sym} style={{padding:"7px 10px",fontSize:12.5}}>{fetching?<span className="spin"/>:"↻ Price"}</button>
+          </div></div>
           <div><div className="eyebrow" style={{fontSize:10,marginBottom:3}}>Stock price</div><input value={spot} onChange={e=>setSpot(e.target.value)} style={{...fld,width:90}}/></div>
           <div><div className="eyebrow" style={{fontSize:10,marginBottom:3}}>IV %</div><input value={iv} onChange={e=>setIv(e.target.value)} style={{...fld,width:70}}/></div>
           {note && <div className="mono" style={{fontSize:12,color:"var(--faint)",paddingBottom:8}}>{note}</div>}
