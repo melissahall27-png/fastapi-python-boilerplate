@@ -3463,6 +3463,29 @@ dir="up"|"down". px=last close. atr=avg DAILY range in $ (~14d). comp/lvl/cat/fu
         {when && !loading && <div className="mono" style={{fontSize:11.5,color:"var(--faint)",marginTop:10}}>Last scan {new Date(when).toLocaleString()}</div>}
       </div>
 
+      {/* Key / legend — what every field on a runner card means. */}
+      <div className="card" style={{padding:16,marginBottom:14}}>
+        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:11}}>
+          <div className="eyebrow" style={{margin:0}}>Key — what each field means</div>
+          <Help text="A plain-language legend for every number on a runner card. Everything here is a structural read, not a prediction — confirm live prices on your own screen."/>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:"10px 20px"}}>
+          {[["Runner score","0–100 blend of the four grades (Compression · Level · Catalyst · Fuel). Higher = more of a coiled-under-a-magnet setup."],
+            ["▲ Calls / ▼ Puts","The direction the structure favors — calls for an upside break, puts for a downside break."],
+            ["Trigger","The exact price that confirms the move. No trade until price actually breaks it."],
+            ["Wrong past","The invalidation level. If price trades past this, the setup failed — get out."],
+            ["Daily range","Average daily travel in dollars (ATR). Roughly how far it moves in a day."],
+            ["IV rank","0–100, how pricey options are vs the last year. High (60+) = premium already rich, IV-crush risk."],
+            ["Chain","Option liquidity — thick / ok / thin. Thin means hard to fill and scale out cleanly."],
+            ["Catalyst","The event expected to force the break (earnings, NFP, Fed…), or 'none'."]
+          ].map(([t,d],i)=>(
+            <div key={i} style={{display:"flex",gap:9,alignItems:"flex-start"}}>
+              <span className="mono" style={{fontSize:12,fontWeight:800,color:"var(--brass)",whiteSpace:"nowrap",flex:"0 0 104px"}}>{t}</span>
+              <span style={{fontSize:12.5,color:"var(--comp)",lineHeight:1.5}}>{d}</span>
+            </div>))}
+        </div>
+      </div>
+
       {rows && <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:14,alignItems:"center"}}>
         <span className="eyebrow">Show</span>
         {[[0,"All"],[55,"55+"],[70,"70+ only"]].map(([v,l])=>(
