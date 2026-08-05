@@ -507,8 +507,9 @@ export default function TradingCommandCenter(){
         <div style={{display:"flex",alignItems:"flex-end",justifyContent:"space-between",flexWrap:"wrap",gap:12}}>
           <div>
             <h1 className="disp" style={{fontSize:30,fontWeight:800,letterSpacing:"-0.02em",lineHeight:1,margin:0}}>
-              Edge <span style={{color:"var(--brass)"}}>Room</span>
+              The Edge <span style={{color:"var(--brass)"}}>Room</span>
             </h1>
+            <div className="mono" style={{fontSize:12,letterSpacing:"0.14em",textTransform:"uppercase",color:"var(--brass-dim)",marginTop:6}}>Built for execution &amp; results</div>
           </div>
           <div className="mono" style={{fontSize:13.5,color:"var(--dim)",textAlign:"right"}}>
             {new Date().toLocaleDateString(undefined,{weekday:"long",month:"short",day:"numeric"})}
