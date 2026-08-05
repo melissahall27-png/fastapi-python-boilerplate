@@ -4095,6 +4095,22 @@ function News({watch}){
   const [loading,setLoading]=useState(false);
   const [err,setErr]=useState("");
   const [scope,setScope]=useState("watch");
+  const [mode,setMode]=useState("free");   // free = Yahoo headlines (instant, no AI) · ai = AI wire (adds sentiment)
+
+  const ago=(ts)=>{ if(!ts) return ""; const s=Math.max(0,(Date.now()-ts)/1000); if(s<60)return"just now"; const m=s/60; if(m<60)return Math.round(m)+"m ago"; const h=m/60; if(h<24)return Math.round(h)+"h ago"; return Math.round(h/24)+"d ago"; };
+
+  async function loadFree(){
+    setLoading(true); setErr(""); setItems([]);
+    try{
+      const qs = scope==="watch" ? `symbols=${encodeURIComponent((watch||[]).join(","))}` : "market=1";
+      const r=await fetch(`/api/news?${qs}`);
+      const j=await r.json();
+      if(j&&Array.isArray(j.items)&&j.items.length) setItems(j.items.map(n=>({...n,free:true})));
+      else setErr("No headlines came back — try again, or switch to the AI wire.");
+    }catch(e){ setErr("Free feed failed. Check connection and retry."); }
+    setLoading(false);
+  }
+  const pull=()=> (mode==="free"?loadFree():load());
 
   async function load(){
     setLoading(true); setErr("");
@@ -4121,9 +4137,16 @@ function News({watch}){
       </div>
       <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14}}>
         <div className="eyebrow" style={{margin:0}}>News wire</div>
-        <Help text="Latest market-moving headlines with a bull/bear tag on each. Toggle 'My watchlist' (news on your tickers) or 'Broad market' (indices, Fed/rates, semis). Pulled live from web search — best-effort and delayed; verify anything you'd trade on."/>
+        <Help text="Latest market-moving headlines. Two sources: 'Free feed' pulls real headlines from Yahoo Finance instantly with ZERO AI cost (publisher + time, tap to open the article); 'AI wire' uses an AI web search that rewrites headlines and adds a bull/bear tag (costs one AI call). Toggle 'My watchlist' or 'Broad market' for either. Best-effort and delayed — verify anything you'd trade on."/>
       </div>
       <div style={{display:"flex",gap:8,marginBottom:16,alignItems:"center",flexWrap:"wrap"}}>
+        <div style={{display:"flex",background:"var(--bg2)",border:"1px solid var(--line)",borderRadius:9,padding:3}}>
+          {[["free","⚡ Free feed"],["ai","🧠 AI wire"]].map(([id,l])=>(
+            <button key={id} onClick={()=>{setMode(id); setItems([]); setErr("");}} className="disp"
+              style={{border:"none",padding:"7px 13px",fontSize:14,fontWeight:600,borderRadius:7,
+                background:mode===id?"var(--bg3)":"transparent",color:mode===id?"var(--brass)":"var(--dim)"}}>{l}</button>
+          ))}
+        </div>
         <div style={{display:"flex",background:"var(--bg2)",border:"1px solid var(--line)",borderRadius:9,padding:3}}>
           {[["watch","My watchlist"],["market","Broad market"]].map(([id,l])=>(
             <button key={id} onClick={()=>setScope(id)} className="disp"
@@ -4132,8 +4155,9 @@ function News({watch}){
           ))}
         </div>
         <div style={{flex:1}}/>
-        <button className="btn-primary btn" onClick={load} disabled={loading}>{loading?<span className="spin"/>:"Pull latest news"}</button>
+        <button className="btn-primary btn" onClick={pull} disabled={loading}>{loading?<span className="spin"/>:(mode==="free"?"⚡ Get headlines":"🧠 Pull latest news")}</button>
       </div>
+      <div className="mono" style={{fontSize:11.5,color:"var(--faint)",marginTop:-6,marginBottom:14}}>{mode==="free"?"Free · from Yahoo Finance · no AI tokens used":"AI web search · adds sentiment · uses one AI call"}</div>
       {err && <div style={{color:"var(--bear)",fontSize:13.5,marginBottom:10}}>{err}</div>}
 
       {items.length===0 && !loading &&
@@ -4146,11 +4170,13 @@ function News({watch}){
           <div key={i} className="card" style={{padding:15}}>
             <div style={{display:"flex",alignItems:"center",gap:9,marginBottom:6,flexWrap:"wrap"}}>
               <span className="mono" style={{fontWeight:700,fontSize:13.5,color:"var(--brass)"}}>{it.ticker||"MKT"}</span>
-              <span className="tag" style={{color:sCol(it.sentiment),borderColor:"var(--line2)"}}>{it.sentiment||"neutral"}</span>
-              <span className="mono" style={{fontSize:12,color:"var(--faint)"}}>{it.source} · {it.time}</span>
+              {!it.free && <span className="tag" style={{color:sCol(it.sentiment),borderColor:"var(--line2)"}}>{it.sentiment||"neutral"}</span>}
+              <span className="mono" style={{fontSize:12,color:"var(--faint)"}}>{it.source}{(it.time||it.ts)?" · "+(it.free?ago(it.ts):it.time):""}</span>
             </div>
-            <div className="disp" style={{fontSize:15,fontWeight:600,lineHeight:1.3,marginBottom:5}}>{it.headline}</div>
-            <div style={{fontSize:14.5,color:"var(--dim)",lineHeight:1.5}}>{it.summary}</div>
+            {it.free && it.link
+              ? <a href={it.link} target="_blank" rel="noopener" className="disp" style={{fontSize:15,fontWeight:600,lineHeight:1.3,color:"var(--bone)",textDecoration:"none",display:"block"}}>{it.headline} <span style={{color:"var(--focus)",fontSize:13}}>↗</span></a>
+              : <div className="disp" style={{fontSize:15,fontWeight:600,lineHeight:1.3,marginBottom:5}}>{it.headline}</div>}
+            {it.summary && <div style={{fontSize:14.5,color:"var(--dim)",lineHeight:1.5,marginTop:5}}>{it.summary}</div>}
           </div>
         ))}
       </div>
@@ -4790,7 +4816,7 @@ const LIB_TYPES=[["Video","▶","#E8756A"],["Playlist","≣","#B084E9"],["Articl
 /* Links seeded into the library. Bump LIBRARY_SEED_VER when you add entries so
    they merge in for people who already loaded an earlier seed (never duplicated
    — matched by URL — and their own deletions/renames are left untouched). */
-const LIBRARY_SEED_VER=2;
+const LIBRARY_SEED_VER=3;
 const LIBRARY_SEED=[
   {url:"https://youtu.be/QVlQ5jfA4kY", type:"Video", title:"Study video 1"},
   {url:"https://youtu.be/yXELw6fwTa0", type:"Video", title:"Study video 2"},
@@ -4802,6 +4828,7 @@ const LIBRARY_SEED=[
   {url:"https://www.tradingview.com/x/LzJa5Eqa/", type:"Chart", title:"Chart snapshot 2"},
   {url:"https://www.tradingview.com/watchlists/163482724/", type:"Watchlist", title:"My TradingView watchlist"},
   {url:"https://finviz.com/", type:"Tool", title:"Finviz — screener, heat-map & news", notes:"Free stock screener, sector heat-map, and news aggregator. Filter the whole market by your criteria (float, relative volume, gap %, sector, performance), read the S&P heat-map to see where money is rotating, and skim aggregated headlines. A fast pre-filter to build a watchlist BEFORE you spend AI calls on the deeper scans."},
+  {url:"https://stockmarketwatch.com/", type:"Tool", title:"Stock Market Watch — live futures & headlines", notes:"One page with real-time index futures, the economic-events calendar, and a fast-scrolling headline ticker. Good pre-market glance for where futures and the calendar sit before the open. (Your in-app News tab pulls its free feed from Yahoo, not this site.)"},
 ].map((s,i)=>({ id:"seed-"+i, notes:"", img:null, ts:0, ...s }));
 function libColor(t){ const f=LIB_TYPES.find(x=>x[0]===t); return f?f[2]:"#8792A0"; }
 function libIcon(t){ const f=LIB_TYPES.find(x=>x[0]===t); return f?f[1]:"•"; }
