@@ -5051,22 +5051,22 @@ function Playbook(){
 }
 const GLOSSARY=[
   {cat:"Bar types",sub:"How each candle reads vs. the prior one",items:[
-    {term:"Type 1 · Inside",def:"An <b>inside bar</b>: high lower than the prior high AND low higher than the prior low. Price is contracting inside the last candle — no trigger yet, this is where you wait, not enter."},
-    {term:"Type 2 · 2-up",def:"A directional <b>up</b> bar that breaks the prior bar's high but NOT its low. Trading through that prior high is your <b>long trigger</b>."},
-    {term:"Type 2 · 2-down",def:"A directional <b>down</b> bar that breaks the prior bar's low but NOT its high. Trading through that prior low is your <b>short trigger</b>."},
-    {term:"Type 3 · Outside",def:"An <b>outside / engulfing</b> bar that takes out BOTH the prior high and the prior low. Broad and volatile — it can trap traders on both sides."},
+    {term:"Type 1 · Inside",dia:"inside",def:"An <b>inside bar</b>: high lower than the prior high AND low higher than the prior low. Price is contracting inside the last candle — no trigger yet, this is where you wait, not enter."},
+    {term:"Type 2 · 2-up",dia:"up2",def:"A directional <b>up</b> bar that breaks the prior bar's high but NOT its low. Trading through that prior high is your <b>long trigger</b>."},
+    {term:"Type 2 · 2-down",dia:"down2",def:"A directional <b>down</b> bar that breaks the prior bar's low but NOT its high. Trading through that prior low is your <b>short trigger</b>."},
+    {term:"Type 3 · Outside",dia:"outside",def:"An <b>outside / engulfing</b> bar that takes out BOTH the prior high and the prior low. Broad and volatile — it can trap traders on both sides."},
   ]},
   {cat:"Actionable signals",sub:"The bar combinations worth taking",items:[
-    {term:"2-1-2",def:"Directional bar, inside bar, then a directional break out of the inside bar. The inside bar coils the energy; the break is a clean, defined entry. Same direction = continuation, opposite = reversal."},
-    {term:"3-1-2",def:"Outside bar, inside bar, then a directional break. The outside bar sets a wide range, the inside tightens it, and the break gives a high-quality entry with a clear stop."},
-    {term:"1-2-2",def:"Inside bar, one directional bar, then a second directional bar the OTHER way — a <b>reversal</b>. The market probes one side, fails, and flips."},
-    {term:"2-2",def:"Two directional bars in a row. Same direction = <b>continuation</b>; opposite = <b>reversal</b>. Read the higher timeframe to know which one you want."},
-    {term:"Failed 2",def:"A 2-up or 2-down that breaks the level, can't hold, and closes back inside. The failure itself becomes the signal to trade the other way."},
+    {term:"2-1-2",dia:"s212",def:"Directional bar, inside bar, then a directional break out of the inside bar. The inside bar coils the energy; the break is a clean, defined entry. Same direction = continuation, opposite = reversal."},
+    {term:"3-1-2",dia:"s312",def:"Outside bar, inside bar, then a directional break. The outside bar sets a wide range, the inside tightens it, and the break gives a high-quality entry with a clear stop."},
+    {term:"1-2-2",dia:"s122",def:"Inside bar, one directional bar, then a second directional bar the OTHER way — a <b>reversal</b>. The market probes one side, fails, and flips."},
+    {term:"2-2",dia:"s22",def:"Two directional bars in a row. Same direction = <b>continuation</b>; opposite = <b>reversal</b>. Read the higher timeframe to know which one you want."},
+    {term:"Failed 2",dia:"failed2",def:"A 2-up or 2-down that breaks the level, can't hold, and closes back inside. The failure itself becomes the signal to trade the other way."},
   ]},
   {cat:"Strat continuity scans",sub:"The screener patterns — D/W/M/Q",items:[
-    {term:"FTFC grid (D/W/M/Q)",def:"The four-timeframe color row — Daily, Weekly, Monthly, Quarterly. All the same color = <b>Full Time Frame Continuity</b> (all up or all down), the highest-odds directional environment. Mixed colors = a broadening range; trade the edges, not continuation."},
-    {term:"Nirvana (1-3)",def:"An <b>inside bar (Type 1) then an outside bar (Type 3)</b> — price coils tight, then expands violently through both sides. A high-energy breakout setup; trade the side that holds after the outside bar."},
-    {term:"Holy Grail (3-1)",def:"An <b>outside bar (Type 3) then an inside bar (Type 1)</b> — a broad, volatile range followed by a tight coil inside it. The break of that inside bar is a clean, defined entry with a small stop."},
+    {term:"FTFC grid (D/W/M/Q)",dia:"ftfc",def:"The four-timeframe color row — Daily, Weekly, Monthly, Quarterly. All the same color = <b>Full Time Frame Continuity</b> (all up or all down), the highest-odds directional environment. Mixed colors = a broadening range; trade the edges, not continuation."},
+    {term:"Nirvana (1-3)",dia:"nirvana",def:"An <b>inside bar (Type 1) then an outside bar (Type 3)</b> — price coils tight, then expands violently through both sides. A high-energy breakout setup; trade the side that holds after the outside bar."},
+    {term:"Holy Grail (3-1)",dia:"holy",def:"An <b>outside bar (Type 3) then an inside bar (Type 1)</b> — a broad, volatile range followed by a tight coil inside it. The break of that inside bar is a clean, defined entry with a small stop."},
   ]},
   {cat:"FTFC & structure",sub:"Reading the environment before you enter",items:[
     {term:"FTFC",def:"<b>Full Time Frame Continuity</b>: month, week, day, 60m… all the same color — all up or all down. The highest-probability directional environment; trade WITH it."},
@@ -5180,6 +5180,70 @@ const GLOSSARY=[
     {term:"EMA / VWAP trend filter",def:"The optional confirm in your Examine checklist: for a LONG, price above the 50 EMA <i>and</i> VWAP; for a SHORT, below both. It's experimental — log it on your trades and let your own win-rate data decide if it improves your edge. A filter, not a signal; don't force it."},
   ]},
 ];
+/* ---------- Strat candlestick diagrams for the glossary ---------- */
+const DIAS={
+  inside:{ bars:[{x:110,hi:88,lo:22,op:32,cl:78,c:"n",tag:"prior"},{x:180,hi:70,lo:40,op:46,cl:64,c:"n",tag:"inside"}],
+    refs:[{p:88,c:"#333D49",label:"prior high"},{p:22,c:"#333D49",label:"prior low"}] },
+  up2:{ bars:[{x:110,hi:70,lo:30,op:38,cl:62,c:"n",tag:"prior"},{x:180,hi:92,lo:44,op:48,cl:88,c:"up",tag:"2-up"}],
+    refs:[{p:70,label:"long trigger"}] },
+  down2:{ bars:[{x:110,hi:70,lo:30,op:40,cl:62,c:"n",tag:"prior"},{x:180,hi:56,lo:8,op:52,cl:12,c:"dn",tag:"2-down"}],
+    refs:[{p:30,c:"#E76A5B",label:"short trigger"}] },
+  outside:{ bars:[{x:110,hi:66,lo:38,op:44,cl:60,c:"n",tag:"prior"},{x:180,hi:90,lo:14,op:22,cl:84,c:"up",tag:"outside"}],
+    refs:[{p:66,c:"#333D49",label:"prior high"},{p:38,c:"#333D49",label:"prior low"}] },
+  s212:{ bars:[{x:80,hi:60,lo:28,op:32,cl:56,c:"up",tag:"2"},{x:145,hi:54,lo:38,op:42,cl:50,c:"n",tag:"1"},{x:210,hi:82,lo:46,op:50,cl:78,c:"up",tag:"2"}],
+    refs:[{p:54,label:"break = entry"}] },
+  s312:{ bars:[{x:80,hi:80,lo:20,op:28,cl:72,c:"up",tag:"3"},{x:145,hi:64,lo:40,op:46,cl:58,c:"n",tag:"1"},{x:210,hi:88,lo:54,op:56,cl:84,c:"up",tag:"2"}],
+    refs:[{p:64,label:"break = entry"}] },
+  s122:{ bars:[{x:80,hi:60,lo:44,op:48,cl:56,c:"n",tag:"1"},{x:145,hi:80,lo:50,op:52,cl:76,c:"up",tag:"2"},{x:210,hi:78,lo:34,op:74,cl:38,c:"dn",tag:"2 rev"}],
+    refs:[{p:50,c:"#E76A5B",label:"flips down"}] },
+  s22:{ bars:[{x:110,hi:58,lo:26,op:30,cl:54,c:"up",tag:"2"},{x:180,hi:84,lo:52,op:54,cl:80,c:"up",tag:"2"}],
+    refs:[] },
+  failed2:{ bars:[{x:110,hi:66,lo:34,op:40,cl:60,c:"n",tag:"prior"},{x:180,hi:84,lo:40,op:60,cl:44,c:"dn",tag:"fail"}],
+    refs:[{p:66,label:"poke & close back in"}] },
+  nirvana:{ bars:[{x:110,hi:58,lo:44,op:47,cl:55,c:"n",tag:"1 inside"},{x:180,hi:86,lo:18,op:52,cl:80,c:"up",tag:"3 outside"}],
+    refs:[] },
+  holy:{ bars:[{x:110,hi:86,lo:18,op:26,cl:80,c:"up",tag:"3 outside"},{x:180,hi:64,lo:40,op:46,cl:58,c:"n",tag:"1 inside"}],
+    refs:[] },
+};
+function StratDia({kind}){
+  const W=280,H=120,yTop=12,yBot=100;
+  const Y=p=>yBot-(p/100)*(yBot-yTop);
+  const cw=15, UP="#3FB782", DN="#E76A5B", NEUT="#8792A0", BR="#E3A857", L="#333D49";
+  const C={up:UP,dn:DN,n:NEUT};
+  const box={maxWidth:300,marginTop:10,background:"#0E1116",border:"1px solid "+L,borderRadius:8};
+  if(kind==="ftfc"){
+    return (
+      <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={box} role="img" aria-label="Full time frame continuity grid">
+        <text x={W/2} y={22} fill={BR} fontSize="9.5" fontFamily="'JetBrains Mono',monospace" fontWeight="700" textAnchor="middle">ALL SAME COLOR = FULL CONTINUITY</text>
+        {[["D"],["W"],["M"],["Q"]].map(([lab],i)=>{const x=26+i*60; return (
+          <g key={i}>
+            <rect x={x} y={38} width={46} height={42} rx="7" fill={UP} opacity="0.92"/>
+            <text x={x+23} y={65} fill="#0E1116" fontSize="16" fontWeight="800" textAnchor="middle">▲</text>
+            <text x={x+23} y={98} fill={NEUT} fontSize="11" fontFamily="'JetBrains Mono',monospace" fontWeight="700" textAnchor="middle">{lab}</text>
+          </g>);})}
+      </svg>);
+  }
+  const D=DIAS[kind]; if(!D) return null;
+  const bar=(b,i)=>{ const c=C[b.c]||NEUT, top=Y(Math.max(b.op,b.cl)), bot=Y(Math.min(b.op,b.cl));
+    return (
+      <g key={i}>
+        <line x1={b.x} x2={b.x} y1={Y(b.hi)} y2={Y(b.lo)} stroke={c} strokeWidth="1.6"/>
+        <rect x={b.x-cw/2} y={top} width={cw} height={Math.max(2.5,bot-top)} fill={c} rx="2"/>
+        {b.tag && <text x={b.x} y={yBot+14} fill={c} fontSize="9" fontFamily="'JetBrains Mono',monospace" fontWeight="700" textAnchor="middle">{b.tag}</text>}
+      </g>);
+  };
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={box} role="img" aria-label={`Strat ${kind} pattern`}>
+      {(() => { const single=(D.refs||[]).length===1; return (D.refs||[]).map((r,i)=>(
+        <g key={"r"+i}>
+          <line x1={10} x2={W-10} y1={Y(r.p)} y2={Y(r.p)} stroke={r.c||BR} strokeWidth="1" strokeDasharray="4 3" opacity="0.9"/>
+          {r.label && (single
+            ? <text x={12} y={13} fill={r.c||BR} fontSize="9.5" fontFamily="'JetBrains Mono',monospace" fontWeight="700" textAnchor="start">{r.label}</text>
+            : <text x={W-12} y={Y(r.p)-4} fill={r.c||BR} fontSize="9" fontFamily="'JetBrains Mono',monospace" fontWeight="700" textAnchor="end">{r.label}</text>)}
+        </g>)); })()}
+      {D.bars.map(bar)}
+    </svg>);
+}
 function GlossaryView(){
   return (
     <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(340px,1fr))",gap:16,alignItems:"start"}}>
@@ -5191,6 +5255,7 @@ function GlossaryView(){
             <div key={j} className="gloss-row">
               <div className="gloss-term">{it.term}</div>
               <div className="gloss-def" dangerouslySetInnerHTML={{__html:it.def}}/>
+              {it.dia && <StratDia kind={it.dia}/>}
             </div>
           ))}
         </div>
