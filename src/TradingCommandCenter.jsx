@@ -4096,6 +4096,22 @@ const PIV_METHODS=["Standard","Fibonacci","Camarilla"];
 function PivotCalculator(){
   const [h,setH]=useState(""); const [l,setL]=useState(""); const [c,setC]=useState("");
   const [label,setLabel]=useState("IWM"); const [method,setMethod]=useState("Standard"); const [period,setPeriod]=useState("Prior day");
+  const [busy,setBusy]=useState(false); const [note,setNote]=useState("");
+  async function autofill(){
+    const s=String(label||"").trim().toUpperCase(); if(!s||busy) return;
+    setBusy(true); setNote("");
+    try{
+      const r=await fetch(`/api/ohlc?symbol=${encodeURIComponent(s)}&interval=1d&range=3mo`).then(x=>x.json()).catch(()=>null);
+      const bars=(r&&Array.isArray(r.bars))?r.bars:[];
+      if(!bars.length){ setNote("No data — enter the numbers manually."); setBusy(false); return; }
+      const n = period==="Prior week"?5 : period==="Prior month"?21 : 1;
+      const seg = bars.slice(-n);
+      const hi=Math.max(...seg.map(b=>b.h)), lo=Math.min(...seg.map(b=>b.l)), cl=seg[seg.length-1].c;
+      setH(hi.toFixed(2)); setL(lo.toFixed(2)); setC(cl.toFixed(2));
+      setNote(`${s} · ${period.toLowerCase()} — H ${hi.toFixed(2)} / L ${lo.toFixed(2)} / C ${cl.toFixed(2)}`);
+    }catch(e){ setNote("Couldn't fetch — enter manually."); }
+    setBusy(false);
+  }
   const H=num(h),L=num(l),C=num(c);
   const valid = H!=null && L!=null && C!=null && H>=L;
   let levels=[];
@@ -4123,6 +4139,10 @@ function PivotCalculator(){
         <Field label="High"><input className="mono" placeholder="0.00" value={h} onChange={e=>setH(e.target.value)}/></Field>
         <Field label="Low"><input className="mono" placeholder="0.00" value={l} onChange={e=>setL(e.target.value)}/></Field>
         <Field label="Close"><input className="mono" placeholder="0.00" value={c} onChange={e=>setC(e.target.value)}/></Field>
+      </div>
+      <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",marginTop:10}}>
+        <button className="btn" onClick={autofill} disabled={busy||!String(label||"").trim()} style={{padding:"7px 12px",fontSize:12.5}}>{busy?<span className="spin"/>:"⚡ Auto-fill H/L/C from "+(label||"ticker")}</button>
+        <span className="mono" style={{fontSize:12,color:note?"var(--brass)":"var(--faint)"}}>{note||"Pulls the "+period.toLowerCase()+"'s high, low & close for free (Yahoo) — no AI."}</span>
       </div>
 
       <div style={{display:"flex",gap:4,marginTop:14,background:"var(--bg)",border:"1px solid var(--line)",borderRadius:9,padding:3,width:"fit-content"}}>
@@ -4157,6 +4177,18 @@ const SD_PRESETS=[["1","1 day"],["7","1 week"],["30","1 month"]];
 function StdDevCalculator(){
   const [price,setPrice]=useState(""); const [iv,setIv]=useState(""); const [days,setDays]=useState("7");
   const [label,setLabel]=useState("IWM");
+  const [busy,setBusy]=useState(false); const [note,setNote]=useState("");
+  async function autofillPrice(){
+    const s=String(label||"").trim().toUpperCase(); if(!s||busy) return;
+    setBusy(true); setNote("");
+    try{
+      const r=await fetch(`/api/quotes?symbols=${encodeURIComponent(s)}`).then(x=>x.json()).catch(()=>null);
+      const q=r&&r.quotes&&r.quotes[s];
+      if(q&&q.price!=null){ setPrice(String(Math.round(q.price*100)/100)); setNote(`${s} @ $${q.price.toFixed(2)} — now enter IV from your chain`); }
+      else setNote("No price — enter it manually.");
+    }catch(e){ setNote("Couldn't fetch — enter manually."); }
+    setBusy(false);
+  }
   const P=num(price), IV=num(iv), D=num(days);
   const valid = P!=null&&P>0 && IV!=null&&IV>0 && D!=null&&D>0;
   let move=null, movePct=null, rows=[];
@@ -4177,6 +4209,10 @@ function StdDevCalculator(){
         <Field label="Price"><input className="mono" placeholder="0.00" value={price} onChange={e=>setPrice(e.target.value)}/></Field>
         <Field label="Implied vol % (annual)"><input className="mono" placeholder="e.g. 22" value={iv} onChange={e=>setIv(e.target.value)}/></Field>
         <Field label="Days"><input className="mono" placeholder="7" value={days} onChange={e=>setDays(e.target.value)}/></Field>
+      </div>
+      <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",marginTop:10}}>
+        <button className="btn" onClick={autofillPrice} disabled={busy||!String(label||"").trim()} style={{padding:"7px 12px",fontSize:12.5}}>{busy?<span className="spin"/>:"⚡ Auto-fill price from "+(label||"ticker")}</button>
+        <span className="mono" style={{fontSize:12,color:note?"var(--brass)":"var(--faint)"}}>{note||"Price fills free (Yahoo). IV comes from your broker's option chain — not a free feed."}</span>
       </div>
       <div style={{display:"flex",gap:6,marginTop:10,flexWrap:"wrap"}}>
         {SD_PRESETS.map(([v,l])=>(
