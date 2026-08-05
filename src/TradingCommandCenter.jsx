@@ -494,7 +494,7 @@ export default function TradingCommandCenter(){
   useEffect(()=>{ if(loaded) sSet("watchlist:tickers",watch); },[watch,loaded]);
   useEffect(()=>{ if(loaded && Object.keys(quotes).length) sSet("quotes:last",quotes); },[quotes,loaded]);
 
-  const TABS=[["guide","Guide"],["today","Today"],["dash","Dashboard"],["journal","Journal"],["review","Review"],["watch","Watchlist"],["strat","Strat"],["runner","Runner"],["scans","Scans"],["sectors","Sectors"],["tools","Tools"],["news","News"],["play","Playbook"],["tutor","Tutor"]];
+  const TABS=[["guide","Guide"],["today","Today"],["dash","Dashboard"],["journal","Journal"],["review","Review"],["watch","Watchlist"],["strat","Strat"],["runner","Runner"],["scans","Scans"],["sectors","Sectors"],["tools","Tools"],["news","News"],["play","Playbook"],["library","Library"],["tutor","Tutor"]];
 
   return (
     <HelpCtx.Provider value={showHelp}>
@@ -551,6 +551,7 @@ export default function TradingCommandCenter(){
         {tab==="tools" && <Tools watch={watch} setWatch={setWatch} />}
         {tab==="news" && <News watch={watch} />}
         {tab==="play" && <Playbook />}
+        {tab==="library" && <KnowledgeLibrary />}
         {tab==="tutor" && <Tutor trades={trades} />}
       </div>
     </div>
@@ -4785,7 +4786,19 @@ function DaySwingCard(){
   );
 }
 
-const LIB_TYPES=[["Video","▶","#E8756A"],["Article","▤","#6FA8DC"],["Note","✎","#E3A857"],["Chart","📈","#3FB782"]];
+const LIB_TYPES=[["Video","▶","#E8756A"],["Playlist","≣","#B084E9"],["Article","▤","#6FA8DC"],["Note","✎","#E3A857"],["Chart","📈","#3FB782"],["Watchlist","★","#F2BE6E"]];
+/* Links seeded into the library on first load (once — deletions stick after). */
+const LIBRARY_SEED=[
+  {url:"https://youtu.be/QVlQ5jfA4kY", type:"Video", title:"Study video 1"},
+  {url:"https://youtu.be/yXELw6fwTa0", type:"Video", title:"Study video 2"},
+  {url:"https://youtu.be/kUD6FT0n5Qk", type:"Video", title:"Study video 3"},
+  {url:"https://youtu.be/fELzjrW-Ga8", type:"Video", title:"Study video 4"},
+  {url:"https://youtube.com/playlist?list=PLtFWwLzLEJBovPO8knmLNUQXYjZdiWc3u", type:"Playlist", title:"Study playlist 1"},
+  {url:"https://youtube.com/playlist?list=PLoOwDUfJHOPCvUhRARFX0HjUOgULiyTuy", type:"Playlist", title:"Study playlist 2"},
+  {url:"https://www.tradingview.com/x/zpWZ4G0K/", type:"Chart", title:"Chart snapshot 1"},
+  {url:"https://www.tradingview.com/x/LzJa5Eqa/", type:"Chart", title:"Chart snapshot 2"},
+  {url:"https://www.tradingview.com/watchlists/163482724/", type:"Watchlist", title:"My TradingView watchlist"},
+].map((s,i)=>({ id:"seed-"+i, notes:"", img:null, ts:0, ...s }));
 function libColor(t){ const f=LIB_TYPES.find(x=>x[0]===t); return f?f[2]:"#8792A0"; }
 function libIcon(t){ const f=LIB_TYPES.find(x=>x[0]===t); return f?f[1]:"•"; }
 function KnowledgeLibrary(){
@@ -4794,10 +4807,24 @@ function KnowledgeLibrary(){
   const [draft,setDraft]=useState({title:"",type:"Video",url:"",notes:""});
   const [img,setImg]=useState(null);
   const [busy,setBusy]=useState(false);
+  const [editId,setEditId]=useState(null);
   const fileRef=useRef(null);
-  useEffect(()=>{(async()=>{ const l=await sGet("library:items"); if(Array.isArray(l)) setItems(l); setReady(true); })();},[]);
+  useEffect(()=>{(async()=>{
+    let l=await sGet("library:items"); if(!Array.isArray(l)) l=[];
+    // Seed the curated links exactly once; after that the user's deletions stick.
+    const seeded=await sGet("library:seeded");
+    if(!seeded){
+      const have=new Set(l.map(i=>String(i.url||"").trim()));
+      const add=LIBRARY_SEED.filter(s=>s.url && !have.has(s.url));
+      if(add.length) l=[...add, ...l];
+      await sSet("library:items", l);
+      await sSet("library:seeded", true);
+    }
+    setItems(l); setReady(true);
+  })();},[]);
   useEffect(()=>{ if(ready) sSet("library:items",items); },[items,ready]);
   const set=(k,v)=>setDraft(d=>({...d,[k]:v}));
+  const update=(id,patch)=>setItems(x=>x.map(i=>i.id===id?{...i,...patch}:i));
   async function pick(e){ const f=(e.target.files||[])[0]; if(!f) return; setBusy(true); try{ const t=await fileToThumb(f); setImg(t); }catch(_){}; setBusy(false); if(fileRef.current) fileRef.current.value=""; }
   function add(){
     if(!draft.title.trim() && !draft.url.trim() && !img) return;
@@ -4842,13 +4869,22 @@ function KnowledgeLibrary(){
                   {it.img && <img src={it.img} alt="" style={{width:60,height:60,objectFit:"cover",borderRadius:8,border:"1px solid var(--line2)",flexShrink:0}}/>}
                   <div style={{flex:1,minWidth:0}}>
                     <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-                      <span className="mono" style={{fontSize:11.5,fontWeight:700,color:libColor(it.type),border:"1px solid var(--line2)",borderRadius:5,padding:"2px 7px"}}>{libIcon(it.type)} {it.type}</span>
-                      <span className="disp" style={{fontSize:15.5,fontWeight:700,color:"var(--bone)"}}>{it.title}</span>
+                      {editId===it.id
+                        ? <select value={it.type} onChange={e=>update(it.id,{type:e.target.value})} style={{...fld,width:"auto",appearance:"auto",fontSize:12.5,padding:"3px 7px",color:libColor(it.type),fontWeight:700}}>{LIB_TYPES.map(([t])=><option key={t} value={t}>{t}</option>)}</select>
+                        : <span className="mono" style={{fontSize:11.5,fontWeight:700,color:libColor(it.type),border:"1px solid var(--line2)",borderRadius:5,padding:"2px 7px"}}>{libIcon(it.type)} {it.type}</span>}
+                      {editId===it.id
+                        ? <input autoFocus value={it.title} onChange={e=>update(it.id,{title:e.target.value})} onKeyDown={e=>{if(e.key==="Enter")setEditId(null);}} placeholder="Title" style={{...fld,flex:"1 1 180px",fontSize:14,padding:"5px 9px"}}/>
+                        : <span className="disp" style={{fontSize:15.5,fontWeight:700,color:"var(--bone)"}}>{it.title}</span>}
                     </div>
-                    {it.notes && <div style={{fontSize:14,color:"var(--dim)",marginTop:6,lineHeight:1.5}}>{it.notes}</div>}
-                    {it.url && <a href={it.url} target="_blank" rel="noopener" className="mono" style={{display:"inline-block",marginTop:8,fontSize:13,fontWeight:600,color:"var(--focus)",textDecoration:"none"}}>{it.type==="Video"?"▶ Watch":"Open"} ↗</a>}
+                    {editId===it.id
+                      ? <textarea rows={2} value={it.notes} onChange={e=>update(it.id,{notes:e.target.value})} placeholder="Your notes / takeaways" style={{...fld,resize:"vertical",marginTop:8,fontSize:13.5,padding:"7px 9px"}}/>
+                      : (it.notes && <div style={{fontSize:14,color:"var(--dim)",marginTop:6,lineHeight:1.5}}>{it.notes}</div>)}
+                    {it.url && <a href={it.url} target="_blank" rel="noopener" className="mono" style={{display:"inline-block",marginTop:8,fontSize:13,fontWeight:600,color:"var(--focus)",textDecoration:"none"}}>{it.type==="Video"||it.type==="Playlist"?"▶ Watch":it.type==="Watchlist"?"★ Open watchlist":"Open"} ↗</a>}
                   </div>
-                  <button onClick={()=>del(it.id)} style={{background:"none",border:"none",color:"var(--faint)",fontSize:16,cursor:"pointer",padding:2}} title="Delete">×</button>
+                  <div style={{display:"flex",flexDirection:"column",gap:4}}>
+                    <button onClick={()=>setEditId(editId===it.id?null:it.id)} style={{background:"none",border:"none",color:editId===it.id?"var(--brass)":"var(--faint)",fontSize:14,cursor:"pointer",padding:2}} title={editId===it.id?"Done":"Rename"}>{editId===it.id?"✓":"✎"}</button>
+                    <button onClick={()=>del(it.id)} style={{background:"none",border:"none",color:"var(--faint)",fontSize:16,cursor:"pointer",padding:2}} title="Delete">×</button>
+                  </div>
                 </div>
               </div>
             ))}
@@ -4950,7 +4986,6 @@ function Playbook(){
   return (
     <div style={{display:"flex",flexDirection:"column",gap:18}}>
       <FirstSteps/>
-      <KnowledgeLibrary/>
       <StudyList/>
       <OptionsPlaybook/>
       <EntryExitDiagram/>
