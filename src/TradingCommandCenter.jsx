@@ -3210,6 +3210,56 @@ function ChartModal({row,onClose}){
   );
 }
 
+/* ---------- Ask the coach: reusable chat you can drop under any tab ----------
+   Feed it a `context` string describing what's on screen (the scan results, the
+   journal stats) and it answers with the same mentor brain + the trader's own
+   knowledge base as the rest of the app. Each question is one paid AI call, so
+   it stays manual — no auto-firing. */
+function AskCoach({ title="Ask the coach", intro, context="", placeholder="Ask the coach…", suggestions=[] }){
+  const [msgs,setMsgs]=useState([]);
+  const [inp,setInp]=useState("");
+  const [busy,setBusy]=useState(false);
+  async function ask(q){
+    const text=String(q!=null?q:inp).trim(); if(!text||busy) return;
+    const hist=[...msgs,{role:"user",content:text}];
+    setMsgs(hist); setInp(""); setBusy(true);
+    try{
+      const sys=await withKB(MENTOR_SYS+`\n\nThe trader is on a scan screen and is asking you, their coach, a question.${context?("\n\nCONTEXT — what's on their screen right now:\n"+context):""}\n\nAnswer using that context and their rules/knowledge base. Be blunt, probability-first and educational — never a guaranteed call, always tell them to confirm live prices themselves. You may search for current market info if it helps. Today is ${todayISO()}. Keep it tight (≤ 170 words).`);
+      const res=await callClaude({ maxTokens:750, tools:[{type:"web_search_20250305",name:"web_search"}], system:sys, messages:hist.map(m=>({role:m.role,content:m.content})) });
+      setMsgs([...hist,{role:"assistant",content:getText(res)||"(no response)"}]);
+    }catch(e){ setMsgs([...hist,{role:"assistant",content:"("+aiErr(e,"Reply")+")"}]); }
+    setBusy(false);
+  }
+  const fld={fontFamily:"inherit",background:"var(--bg)",border:"1px solid var(--line2)",color:"var(--bone)",borderRadius:8,padding:"9px 11px",fontSize:14,outline:"none"};
+  return (
+    <div className="card" style={{padding:18,marginTop:16,borderColor:"var(--brass-dim)"}}>
+      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
+        <div className="eyebrow" style={{margin:0,color:"var(--brass)"}}>🧠 {title}</div>
+        <Help text="Ask the mentor coach anything about what's on this screen — which setup is cleanest, why a ticker scored where it did, which scanner is making you money, what to do next. Uses your rules + knowledge base. Each question is one AI call."/>
+      </div>
+      <div style={{fontSize:13,color:"var(--dim)",lineHeight:1.55,marginBottom:12}}>{intro||"Ask about anything on this screen. Answers use your rules and knowledge base."}</div>
+      {msgs.length>0 &&
+        <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:10,maxHeight:340,overflowY:"auto"}}>
+          {msgs.map((m,i)=>(
+            <div key={i} style={{alignSelf:m.role==="user"?"flex-end":"flex-start",maxWidth:"88%",padding:"9px 12px",borderRadius:11,fontSize:14,lineHeight:1.55,whiteSpace:"pre-wrap",
+              background:m.role==="user"?"var(--brass-dim)":"var(--bg)",color:m.role==="user"?"#241A0A":"var(--bone)",border:m.role==="user"?"none":"1px solid var(--line)"}}>{m.content}</div>
+          ))}
+          {busy && <div style={{alignSelf:"flex-start",padding:"9px 12px"}}><span className="spin"/></div>}
+        </div>}
+      {suggestions.length>0 && msgs.length===0 &&
+        <div style={{display:"flex",gap:7,flexWrap:"wrap",marginBottom:10}}>
+          {suggestions.map((s,i)=>(
+            <button key={i} className="btn" onClick={()=>ask(s)} disabled={busy} style={{padding:"6px 11px",fontSize:12.5,borderColor:"var(--line2)",color:"var(--dim)"}}>{s}</button>
+          ))}
+        </div>}
+      <div style={{display:"flex",gap:8}}>
+        <input value={inp} onChange={e=>setInp(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")ask();}} placeholder={placeholder} style={{...fld,flex:1}}/>
+        <button className="btn-primary btn" onClick={()=>ask()} disabled={busy||!inp.trim()}>Send</button>
+      </div>
+    </div>
+  );
+}
+
 /* ---------- Scan journal: auto-logs every scan, matches the trades you took, scores each scanner ---------- */
 async function logScan(source, syms, top){
   try{
@@ -3324,6 +3374,16 @@ function ScanJournal({trades}){
             </div>}
           </div>);})}
       </div>
+
+      <AskCoach
+        title="Ask the coach about your scans"
+        intro="This tab knows which scanner surfaced your winners and which just burns clicks. Ask which one is actually paying, what's dragging your win rate, or which scan to trust tomorrow."
+        context={(stats&&stats.totals.scans)
+          ? `Scan-journal summary — ${stats.totals.scans} scans run, ${stats.totals.taken} turned into trades, overall win rate ${rate(stats.totals.wins,stats.totals.losses)!=null?rate(stats.totals.wins,stats.totals.losses)+"%":"n/a"}, net P&L ${fmtMoney(stats.totals.pnl)}.\nBy scanner: ${Object.entries(stats.bySrc).map(([src,b])=>`${src} — ${b.scans} scans, ${b.taken} taken, ${b.wins}W/${b.losses}L${b.taken?`, net ${fmtMoney(b.pnl)}`:""}`).join("; ")}.\nMost recent scans: ${(log||[]).slice(0,8).map(s=>`${s.source} ${new Date(s.ts).toLocaleDateString()} [${(s.syms||[]).slice(0,6).join(", ")}]`).join(" | ")}.`
+          : "No scans have been logged yet."}
+        placeholder="e.g. which scanner is actually making me money?"
+        suggestions={(stats&&stats.totals.scans)?["Which scanner is actually making me money?","What's dragging my win rate down?","Which scan should I trust most tomorrow?"]:["How will this tab help me once I start scanning?"]}
+      />
     </div>
   );
 }
@@ -3464,6 +3524,16 @@ dir="up"|"down". px=last close. atr=avg DAILY range in $ (~14d). comp/lvl/cat/fu
       </div>}
 
       <div id="tenx" style={{marginTop:18}}><TenXMath seed={seed}/></div>
+
+      <AskCoach
+        title="Ask the coach about these runners"
+        intro="Ran the scan and not sure what to do with it? Ask which candidate is cleanest, why the top pick scored highest, or which to leave alone. Grounded in your current results and your rules."
+        context={(rows&&rows.length)
+          ? "Runner scan results, best first (score is 0–100):\n"+rows.slice(0,10).map(r=>`${r.s} ${r.dir==="down"?"puts":"calls"} — score ${runnerScore(r)}${r.px?` @ $${num(r.px).toFixed(2)}`:""}${r.trig?`, trigger $${num(r.trig)}`:""}${r.inval?`, wrong past $${num(r.inval)}`:""}${r.ivr!=null?`, IV rank ${num(r.ivr)}`:""}${r.liq?`, chain ${r.liq}`:""}${r.ev&&r.ev!=="none"?`, catalyst ${r.ev}`:""}${r.why?` — ${r.why}`:""}`).join("\n")
+          : "The trader has not run a runner scan yet — no results are on screen."}
+        placeholder="e.g. which of these has the cleanest setup?"
+        suggestions={(rows&&rows.length)?["Which one has the cleanest setup?","Why did the top pick score highest?","Which of these would you skip, and why?"]:["What makes a good runner candidate?","How should I size a lottery runner?"]}
+      />
 
       <div className="card" style={{padding:18,marginTop:16,borderColor:"var(--brass-dim)"}}>
         <div className="eyebrow" style={{color:"var(--brass)",marginBottom:8}}>Before you hunt these</div>
