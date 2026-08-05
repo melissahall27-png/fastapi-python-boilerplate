@@ -3490,15 +3490,42 @@ function ScanJournal({trades}){
               </span>
             </div>
             {open && <div style={{marginTop:12,paddingTop:12,borderTop:"1px solid var(--line)"}}>
-              <div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:tl.length?12:0}}>
-                {/* Show EVERY ticker from the scan, not just the top few; carry the score/note onto the ones that have it. */}
-                {((s.syms&&s.syms.length)
-                    ? s.syms.map(sym=>{ const hit=(s.top||[]).find(x=>String(x.s).toUpperCase()===String(sym).toUpperCase()); return {s:sym, note:hit&&hit.note}; })
-                    : (s.top||[])
-                  ).map((it,i)=>(
-                  <span key={i} className="mono" style={{fontSize:12.5,background:"var(--bg)",border:"1px solid var(--line2)",borderRadius:8,padding:"5px 10px"}}>
-                    <b style={{color:"var(--bone)"}}>{it.s}</b>{it.note?<span style={{color:"var(--faint)"}}> · {it.note}</span>:null}
-                  </span>))}
+              <div style={{marginBottom:tl.length?12:0}}>
+                {/* Carry the FULL scan read through for every ticker — score, direction, price, why,
+                    trigger, wrong-past, range, IV, chain, catalyst — falling back to a chip when a
+                    scanner only stored a short note. */}
+                {(() => {
+                  const list=(s.syms&&s.syms.length)
+                    ? s.syms.map(sym=>{ const hit=(s.top||[]).find(x=>String(x.s).toUpperCase()===String(sym).toUpperCase()); return hit?{...hit,s:sym}:{s:sym}; })
+                    : (s.top||[]);
+                  const rich=list.some(it=> it.score!=null || it.trig!=null || it.why);
+                  if(!rich) return (
+                    <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
+                      {list.map((it,i)=>(<span key={i} className="mono" style={{fontSize:12.5,background:"var(--bg)",border:"1px solid var(--line2)",borderRadius:8,padding:"5px 10px"}}><b style={{color:"var(--bone)"}}>{it.s}</b>{it.note?<span style={{color:"var(--faint)"}}> · {it.note}</span>:null}</span>))}
+                    </div>);
+                  return (
+                    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(250px,1fr))",gap:10}}>
+                      {list.map((it,i)=>{ const up=!(it.dir==="down"||it.dir==="Put"||it.dir==="puts"); return (
+                        <div key={i} style={{padding:"10px 12px",background:"var(--bg)",border:"1px solid var(--line)",borderRadius:10}}>
+                          <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                            <b className="disp" style={{fontSize:15,color:"var(--bone)"}}>{it.s}</b>
+                            {it.dir && <span className="tag" style={{color:up?"var(--bull)":"var(--bear)",borderColor:up?"var(--bull)":"var(--bear)"}}>{up?"▲ calls":"▼ puts"}</span>}
+                            {it.px!=null && <span className="mono" style={{fontSize:12.5,color:"var(--dim)"}}>${num(it.px).toFixed(2)}</span>}
+                            {it.score!=null && <span className="mono" style={{marginLeft:"auto",fontSize:17,fontWeight:800,color:scoreTone(it.score)}}>{it.score}</span>}
+                          </div>
+                          {it.why && <div style={{fontSize:12.5,color:"var(--comp)",lineHeight:1.5,marginTop:6}}>{it.why}</div>}
+                          <div style={{display:"flex",gap:11,flexWrap:"wrap",marginTop:7,fontSize:11.5,fontFamily:"'JetBrains Mono',monospace"}}>
+                            {it.trig!=null && <span style={{color:"var(--faint)"}}>Trig <b style={{color:"var(--bone)"}}>${num(it.trig).toFixed(2)}</b></span>}
+                            {it.inval!=null && <span style={{color:"var(--faint)"}}>Wrong <b style={{color:"var(--bear)"}}>${num(it.inval).toFixed(2)}</b></span>}
+                            {it.atr!=null && <span style={{color:"var(--faint)"}}>Range <b style={{color:"var(--bone)"}}>${num(it.atr).toFixed(2)}</b></span>}
+                            {it.ivr!=null && <span style={{color:"var(--faint)"}}>IV <b style={{color:num(it.ivr)>60?"var(--bear)":"var(--bull)"}}>{num(it.ivr)}</b></span>}
+                            {it.liq && <span style={{color:"var(--faint)"}}>Chain <b style={{color:"var(--bone)"}}>{it.liq}</b></span>}
+                            {it.ev && it.ev!=="none" && <span style={{color:"var(--faint)"}}>Cat <b style={{color:"var(--brass)"}}>{it.ev}</b></span>}
+                            {it.score==null && it.note && <span style={{color:"var(--faint)"}}>{it.note}</span>}
+                          </div>
+                        </div>);})}
+                    </div>);
+                })()}
               </div>
               {tl.map(t=>{ const p=computePnl(t); return (
                 <div key={t.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 0",borderTop:"1px solid var(--line)"}}>
@@ -3559,7 +3586,7 @@ dir="up"|"down". px=last close. atr=avg DAILY range in $ (~14d). comp/lvl/cat/fu
         if(Array.isArray(j)) all=all.concat(j.filter(x=>x&&x.s));
       }
       setProg("");
-      if(all.length){ all.sort((a,b)=>runnerScore(b)-runnerScore(a)); setRows(all); const t=Date.now(); setWhen(t); sSet("runner_scan",{rows:all,when:t}); logScan("Runner", all.map(r=>r.s), all.map(r=>({s:r.s,note:(r.dir==="down"?"puts":"calls")+" · score "+runnerScore(r)}))); }
+      if(all.length){ all.sort((a,b)=>runnerScore(b)-runnerScore(a)); setRows(all); const t=Date.now(); setWhen(t); sSet("runner_scan",{rows:all,when:t}); logScan("Runner", all.map(r=>r.s), all.map(r=>({s:r.s,dir:r.dir,px:num(r.px),score:runnerScore(r),why:r.why,trig:num(r.trig),inval:num(r.inval),atr:num(r.atr),ivr:r.ivr!=null?num(r.ivr):null,liq:r.liq,ev:r.ev}))); }
       else setErr("Nothing came back — tap again to retry.");
     }catch(e){ setProg(""); setErr(aiErr(e,"Scan")); }
     setLoading(false);
