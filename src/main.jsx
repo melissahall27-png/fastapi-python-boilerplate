@@ -14,9 +14,30 @@ function readAll() {
   return out;
 }
 
+function tradeCount() {
+  try { const a = JSON.parse(localStorage.getItem(TCC_PREFIX + "journal:trades") || "[]"); return Array.isArray(a) ? a.length : 0; }
+  catch (e) { return 0; }
+}
+function lastBackupCount() {
+  try { return parseInt(localStorage.getItem(TCC_PREFIX + "backup:lastCount") || "0", 10) || 0; }
+  catch (e) { return 0; }
+}
+
 function BackupBar() {
   const [note, setNote] = useState("");
+  const [unsaved, setUnsaved] = useState(0);
   const fileRef = useRef(null);
+
+  // Track how many journaled trades exist since the last "Save a copy", so we can
+  // gently nudge a backup before the browser data can be lost.
+  React.useEffect(() => {
+    const check = () => setUnsaved(Math.max(0, tradeCount() - lastBackupCount()));
+    check();
+    const t1 = setTimeout(check, 1500), t2 = setTimeout(check, 4000); // catch first-load data seeding
+    const id = setInterval(check, 20000);
+    window.addEventListener("focus", check);
+    return () => { clearTimeout(t1); clearTimeout(t2); clearInterval(id); window.removeEventListener("focus", check); };
+  }, []);
 
   function exportData() {
     const data = readAll();
@@ -32,6 +53,8 @@ function BackupBar() {
     a.download = `tcc-backup-${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     URL.revokeObjectURL(url);
+    localStorage.setItem(TCC_PREFIX + "backup:lastCount", String(tradeCount()));
+    setUnsaved(0);
     setNote(`Saved ${n} record${n === 1 ? "" : "s"} to your downloads.`);
   }
 
@@ -48,6 +71,7 @@ function BackupBar() {
         const keys = Object.keys(parsed.data);
         if (!confirm(`Restore ${keys.length} record(s)? This overwrites what's on this device.`)) return;
         keys.forEach((k) => localStorage.setItem(TCC_PREFIX + k, parsed.data[k]));
+        localStorage.setItem(TCC_PREFIX + "backup:lastCount", String(tradeCount()));
         setNote("Restored. Reloading…");
         setTimeout(() => location.reload(), 700);
       } catch (err) {
@@ -96,9 +120,13 @@ function BackupBar() {
       <button style={btn} onClick={exportData}>Save a copy</button>
       <button style={btn} onClick={() => fileRef.current && fileRef.current.click()}>Restore</button>
       <input ref={fileRef} type="file" accept="application/json,.json" onChange={importData} style={{ display: "none" }} />
-      {note && (
+      {note ? (
         <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: "#B8C1CD" }}>{note}</span>
-      )}
+      ) : unsaved > 0 ? (
+        <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: unsaved >= 5 ? "#F2BE6E" : "#95A0AD" }}>
+          {unsaved >= 5 ? "⚠ " : ""}{unsaved} trade{unsaved === 1 ? "" : "s"} since your last backup{unsaved >= 5 ? " — Save a copy" : ""}
+        </span>
+      ) : null}
     </div>
   );
 }

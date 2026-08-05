@@ -501,6 +501,7 @@ export default function TradingCommandCenter(){
     <div className="tcc" style={{minHeight:"100vh"}}>
       <style>{STYLE}</style>
       <TickerTape watch={watch} quotes={quotes} />
+      <NewsTape watch={watch} />
 
       {/* Header */}
       <div style={{maxWidth:1180,margin:"0 auto",padding:"22px 20px 0"}}>
@@ -550,7 +551,7 @@ export default function TradingCommandCenter(){
         {tab==="scans" && <ScanJournal trades={trades} />}
         {tab==="sectors" && <Sectors quotes={quotes} setQuotes={setQuotes} />}
         {tab==="tools" && <Tools watch={watch} setWatch={setWatch} />}
-        {tab==="pl" && <PayoffLab />}
+        {tab==="pl" && <PayoffLab watch={watch} />}
         {tab==="news" && <News watch={watch} />}
         {tab==="play" && <Playbook />}
         {tab==="library" && <KnowledgeLibrary />}
@@ -585,6 +586,47 @@ function TickerTape({watch,quotes}){
   );
 }
 
+/* Scrolling news + runners ticker — headlines for your watchlist (free Yahoo
+   feed) and your latest runner picks, streaming across the top like the price tape. */
+function NewsTape({watch}){
+  const [news,setNews]=useState([]);
+  const [runners,setRunners]=useState([]);
+  useEffect(()=>{ (async()=>{ const r=await sGet("runner_scan"); if(r&&Array.isArray(r.rows)) setRunners(r.rows.slice(0,8)); })(); },[]);
+  const key=(watch||[]).join(",");
+  useEffect(()=>{
+    let live=true;
+    async function load(){ if(!key) return; try{ const r=await fetch(`/api/news?symbols=${encodeURIComponent(key)}`); const j=await r.json().catch(()=>null); if(live&&j&&Array.isArray(j.items)) setNews(j.items.slice(0,20)); }catch(e){} }
+    load(); const id=setInterval(load, 5*60*1000); return ()=>{ live=false; clearInterval(id); };
+  },[key]);
+  const items=[
+    ...runners.map(r=>({type:"runner",sym:r.s,dir:r.dir,score:runnerScore(r)})),
+    ...news.map(n=>({type:"news",sym:n.ticker,headline:n.headline,link:n.link,source:n.source})),
+  ];
+  if(!items.length) return null;
+  const cell=(it,i)=> it.type==="runner"
+    ? <span key={"c"+i} className="mono" style={{display:"inline-flex",alignItems:"baseline",gap:7,padding:"0 20px",fontSize:13,borderRight:"1px solid var(--line)"}}>
+        <span style={{color:"var(--brass)",fontWeight:700}}>🚀 {it.sym}</span>
+        <span style={{color:it.dir==="down"?"var(--bear)":"var(--bull)"}}>{it.dir==="down"?"puts":"calls"}</span>
+        <span style={{color:"var(--faint)"}}>runner {it.score}</span>
+      </span>
+    : <a key={"c"+i} href={it.link||undefined} target="_blank" rel="noopener" className="mono" style={{display:"inline-flex",alignItems:"baseline",gap:8,padding:"0 20px",fontSize:13,borderRight:"1px solid var(--line)",textDecoration:"none"}}>
+        <b style={{color:"var(--brass)",fontWeight:700}}>{it.sym||"MKT"}</b>
+        <span style={{color:"var(--bone)"}}>{it.headline}</span>
+        {it.source && <span style={{color:"var(--faint)"}}>· {it.source}</span>}
+      </a>;
+  const dur=Math.max(50, items.length*8);
+  return (
+    <div style={{display:"flex",alignItems:"center",background:"var(--bg)",borderBottom:"1px solid var(--line)"}}>
+      <span className="mono" style={{fontSize:9.5,letterSpacing:"0.16em",color:"var(--brass-dim)",padding:"0 11px",flexShrink:0,borderRight:"1px solid var(--line)"}}>📰 NEWS</span>
+      <div style={{overflow:"hidden",flex:1,padding:"7px 0"}}>
+        <div className="tape-track" style={{animationDuration:dur+"s"}}>
+          {items.map((it,i)=>cell(it,i))}
+          {items.map((it,i)=>cell(it,"b"+i))}
+        </div>
+      </div>
+    </div>
+  );
+}
 /* ============================ TODAY ============================ */
 const HelpCtx=React.createContext(true);
 function Help({text,align="right"}){
@@ -5661,7 +5703,7 @@ const PL_PRESETS={
   calendar:{name:"Calendar spread",legs:[{dir:"buy",type:"call",strike:700,qty:1,dte:38,prem:5.13},{dir:"sell",type:"call",strike:700,qty:1,dte:10,prem:0.80}]},
   condor:{name:"Iron condor",legs:[{dir:"sell",type:"put",strike:660,qty:1,dte:30,prem:6},{dir:"buy",type:"put",strike:640,qty:1,dte:30,prem:3},{dir:"sell",type:"call",strike:720,qty:1,dte:30,prem:6},{dir:"buy",type:"call",strike:740,qty:1,dte:30,prem:3}]},
 };
-function PayoffLab(){
+function PayoffLab({watch}){
   const [sym,setSym]=useState("");
   const [spot,setSpot]=useState("690");
   const [iv,setIv]=useState("28");
@@ -5675,8 +5717,8 @@ function PayoffLab(){
   const setLeg=(id,k,v)=>setLegs(ls=>ls.map(l=>l.id===id?{...l,[k]:v}:l));
   const addLeg=()=>setLegs(ls=>[...ls,{id:Date.now(),dir:"buy",type:"call",strike:Math.round(num(spot)||700),qty:1,dte:30,prem:5}]);
   const delLeg=id=>setLegs(ls=>ls.filter(l=>l.id!==id));
-  async function fetchPrice(){
-    const s=sym.trim().toUpperCase(); if(!s) return; setFetching(true); setNote("");
+  async function fetchPrice(override){
+    const s=String(override!=null?override:sym).trim().toUpperCase(); if(!s) return; setFetching(true); setNote("");
     try{ const r=await fetch(`/api/quotes?symbols=${encodeURIComponent(s)}`); const j=await r.json();
       const q=j&&j.quotes&&j.quotes[s]; if(q&&q.price){ setSpot(String(Math.round(q.price*100)/100)); setNote(`${s} @ $${q.price.toFixed(2)} (last)`);} else setNote("No price — enter it manually."); }
     catch(e){ setNote("Couldn't fetch — enter it manually."); }
@@ -5699,7 +5741,13 @@ function PayoffLab(){
           {Object.entries(PL_PRESETS).map(([k,p])=><button key={k} className="btn" onClick={()=>preset(k)} style={{padding:"6px 11px",fontSize:12.5}}>{p.name}</button>)}
         </div>
         <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"flex-end"}}>
-          <div><div className="eyebrow" style={{fontSize:10,marginBottom:3}}>Symbol (optional)</div><div style={{display:"flex",gap:6}}><input value={sym} onChange={e=>setSym(e.target.value)} placeholder="SPX" style={{...fld,width:90}}/><button className="btn" onClick={fetchPrice} disabled={fetching} style={{padding:"7px 10px",fontSize:12.5}}>{fetching?<span className="spin"/>:"Price"}</button></div></div>
+          <div><div className="eyebrow" style={{fontSize:10,marginBottom:3}}>Ticker (optional)</div><div style={{display:"flex",gap:6}}>
+            <select value={sym} onChange={e=>{ const v=e.target.value; setSym(v); if(v) fetchPrice(v); }} style={{...fld,width:130,appearance:"auto",color:sym?"var(--bone)":"var(--faint)"}}>
+              <option value="">— pick ticker —</option>
+              {(watch||[]).map(s=><option key={s} value={s}>{s}</option>)}
+            </select>
+            <button className="btn" onClick={()=>fetchPrice()} disabled={fetching||!sym} style={{padding:"7px 10px",fontSize:12.5}}>{fetching?<span className="spin"/>:"↻ Price"}</button>
+          </div></div>
           <div><div className="eyebrow" style={{fontSize:10,marginBottom:3}}>Stock price</div><input value={spot} onChange={e=>setSpot(e.target.value)} style={{...fld,width:90}}/></div>
           <div><div className="eyebrow" style={{fontSize:10,marginBottom:3}}>IV %</div><input value={iv} onChange={e=>setIv(e.target.value)} style={{...fld,width:70}}/></div>
           {note && <div className="mono" style={{fontSize:12,color:"var(--faint)",paddingBottom:8}}>{note}</div>}
