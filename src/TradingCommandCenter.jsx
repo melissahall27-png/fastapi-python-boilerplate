@@ -196,9 +196,13 @@ async function callClaude({system, messages, tools, maxTokens=1000}){
         let t=""; try{ t=await res.text(); }catch(e){}
         lastErr="API "+res.status+(t?": "+t.slice(0,140):"");
         if(res.status===429 || res.status>=500 || isRateLimit(t)){
-          if(a<3){ await new Promise(r=>setTimeout(r, backoff[a])); continue; }
+          // Anthropic tells us exactly how long to wait — honor it (capped) for
+          // both the retry spacing and the visible cooldown, instead of guessing.
+          const ra=parseInt(res.headers.get("retry-after")||"",10);
+          const raMs=(isFinite(ra)&&ra>0)?Math.min(ra,300)*1000:0;
+          if(a<3){ await new Promise(r=>setTimeout(r, raMs||backoff[a])); continue; }
           AI.gap=Math.min(AI.gapMax, AI.gap*1.75);
-          AI.trips=(AI.trips||0)+1; AI.coolUntil = Date.now()+(AI.trips>=3?300000:AI.trips===2?120000:45000); aiPing();
+          AI.trips=(AI.trips||0)+1; AI.coolUntil = Date.now()+(raMs||(AI.trips>=3?300000:AI.trips===2?120000:45000)); aiPing();
           throw new Error(RL_MSG);
         }
         throw new Error(lastErr);
