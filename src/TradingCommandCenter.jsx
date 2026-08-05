@@ -3991,10 +3991,107 @@ function Watchlist({watch,setWatch,quotes,setQuotes}){
 
 /* ============================ NEWS ============================ */
 /* ============================ TOOLS (pivots + ticker finder) ============================ */
+/* Detect a liquidity sweep-and-reclaim on daily bars (free, no AI).
+   Bullish: the latest bar wicks BELOW the recent swing low (grabs sellside stops)
+   but CLOSES back above it — the hunt is done, reversal in play. Bearish is the
+   mirror above the swing high. Returns the swept level, the reclaim close, and
+   where the protective stop belongs (just past the wick), or null if no sweep. */
+function detectSweep(bars){
+  const b=(bars||[]).filter(x=>x&&isFinite(+x.h)&&isFinite(+x.l)&&isFinite(+x.c)).map(x=>({t:x.t,h:+x.h,l:+x.l,c:+x.c}));
+  const n=b.length;
+  if(n<15) return null;
+  const k=2; // a swing pivot needs k bars on each side that don't exceed it
+  // The swept level must be a real swing pivot price LEFT BEHIND — not just the
+  // recent extreme, or a rising series would false-flag every new bar.
+  function pivot(kind){
+    for(let i=n-3;i>=k;i--){
+      const v=kind==="high"?b[i].h:b[i].l; let ok=true;
+      for(let j=i-k;j<=i+k;j++){ if(j===i) continue;
+        if(kind==="high"){ if(b[j].h>v){ok=false;break;} } else { if(b[j].l<v){ok=false;break;} } }
+      if(ok) return {idx:i,v};
+    }
+    return null;
+  }
+  const sh=pivot("high"), sl=pivot("low");
+  const look=b.slice(Math.max(0,n-20));
+  const range=Math.max(1e-6, Math.max(...look.map(x=>x.h))-Math.min(...look.map(x=>x.l)));
+  // The sweep can be today's forming bar or yesterday's — check the last two.
+  for(let idx=n-1; idx>=n-2; idx--){
+    const sig=b[idx];
+    if(sl && idx>sl.idx && sig.l<sl.v && sig.c>sl.v)
+      return {dir:"up", level:sl.v, close:sig.c, stop:sig.l, depth:(sl.v-sig.l)/range, ago:n-1-idx};
+    if(sh && idx>sh.idx && sig.h>sh.v && sig.c<sh.v)
+      return {dir:"down", level:sh.v, close:sig.c, stop:sig.h, depth:(sig.h-sh.v)/range, ago:n-1-idx};
+  }
+  return null;
+}
+function LiquiditySweepScanner({watch}){
+  const [hits,setHits]=useState(null);
+  const [busy,setBusy]=useState(false);
+  const [note,setNote]=useState("");
+  const [done,setDone]=useState(0);
+  const [total,setTotal]=useState(0);
+  async function scan(){
+    const syms=[...new Set((watch||[]).map(s=>String(s).toUpperCase()).filter(Boolean))].slice(0,24);
+    if(!syms.length){ setNote("Add tickers to your watchlist first."); return; }
+    setBusy(true); setNote(""); setHits(null); setDone(0); setTotal(syms.length);
+    const out=[];
+    for(let i=0;i<syms.length;i+=4){
+      const batch=syms.slice(i,i+4);
+      const res=await Promise.all(batch.map(async s=>{
+        try{
+          const r=await fetch(`/api/ohlc?symbol=${encodeURIComponent(s)}&interval=1d&range=3mo`);
+          const j=await r.json().catch(()=>null);
+          const bars=(j&&Array.isArray(j.bars))?j.bars:null;
+          if(!bars) return null;
+          const sw=detectSweep(bars);
+          return sw?{s,...sw}:null;
+        }catch(e){ return null; }
+      }));
+      res.forEach(x=>{ if(x) out.push(x); });
+      setDone(Math.min(syms.length,i+batch.length));
+    }
+    out.sort((a,b)=>b.depth-a.depth);
+    setHits(out); setBusy(false);
+    setNote(out.length?`${out.length} sweep${out.length===1?"":"s"} across ${syms.length} tickers — deepest raids first.`
+                      :`No fresh sweeps across ${syms.length} tickers — nobody's stops got raided.`);
+  }
+  return (
+    <div className="card" style={{padding:20}}>
+      <div style={{display:"flex",alignItems:"center",gap:7}}>
+        <div className="eyebrow" style={{margin:0}}>Liquidity sweep scanner</div>
+        <Help text="Free, no AI. Scans your watchlist's daily bars for a stop hunt: price that wicked past a recent swing high/low to grab the obvious stops, then CLOSED back inside (a sweep-and-reclaim). That reclaim is the reversal — trade it instead of being the liquidity. See 'Don't be the liquidity' in the Playbook."/>
+      </div>
+      <div style={{fontSize:13.5,color:"var(--dim)",lineHeight:1.6,margin:"8px 0 13px"}}>Finds tickers that just raided the obvious stops and reversed — a <b style={{color:"var(--bone)"}}>▲ reclaim</b> (swept the lows, closed back above → long bias) or <b style={{color:"var(--bone)"}}>▼ rejection</b> (swept the highs, closed back below → short bias). Put your stop past the wick, not on the level.</div>
+      <button className="btn btn-primary" onClick={scan} disabled={busy} style={{opacity:busy?.6:1}}>
+        {busy?<span><span className="spin"/>{`  Scanning ${done}/${total}…`}</span>:"🎯 Scan watchlist for sweeps"}
+      </button>
+      {note && <div className="mono" style={{fontSize:12.5,color:"var(--faint)",marginTop:11}}>{note}</div>}
+      {hits && hits.length>0 && (
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:10,marginTop:14}}>
+          {hits.map((h,i)=>{ const up=h.dir==="up"; return (
+            <div key={i} style={{padding:"11px 13px",background:"var(--bg)",border:"1px solid var(--line)",borderRadius:10}}>
+              <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                <b className="disp" style={{fontSize:15,color:"var(--bone)"}}>{h.s}</b>
+                <span className="tag" style={{color:up?"var(--bull)":"var(--bear)",borderColor:up?"var(--bull)":"var(--bear)"}}>{up?"▲ reclaim · long":"▼ rejection · short"}</span>
+                <span className="mono" style={{marginLeft:"auto",fontSize:11.5,color:"var(--faint)"}}>{h.ago===0?"today":h.ago+"d ago"}</span>
+              </div>
+              <div style={{display:"flex",gap:12,flexWrap:"wrap",marginTop:8,fontSize:11.5,fontFamily:"'JetBrains Mono',monospace"}}>
+                <span style={{color:"var(--faint)"}}>Swept <b style={{color:"var(--bone)"}}>${h.level.toFixed(2)}</b></span>
+                <span style={{color:"var(--faint)"}}>Reclaim <b style={{color:up?"var(--bull)":"var(--bear)"}}>${h.close.toFixed(2)}</b></span>
+                <span style={{color:"var(--faint)"}}>Stop <b style={{color:"var(--bear)"}}>${h.stop.toFixed(2)}</b></span>
+              </div>
+            </div>);})}
+        </div>
+      )}
+    </div>
+  );
+}
 function Tools({watch,setWatch}){
   return (
     <div style={{display:"flex",flexDirection:"column",gap:18}}>
       <KeyLevels/>
+      <LiquiditySweepScanner watch={watch}/>
       <PivotCalculator/>
       <StdDevCalculator/>
       <TickerFinder watch={watch} setWatch={setWatch}/>
@@ -5480,6 +5577,8 @@ const GLOSSARY=[
     {term:"CHoCH",dia:"choch",def:"<b>Change of Character</b> — the FIRST break against the trend (e.g. taking out a higher low in an uptrend). The earliest reversal warning."},
     {term:"MSS",dia:"mss",def:"<b>Market Structure Shift</b> — a decisive break of structure, usually with displacement, that flips the near-term bias and confirms the CHoCH."},
     {term:"Buyside / sellside",dia:"liquidity",def:"Resting stop orders. <b>Buyside</b> liquidity sits ABOVE swing highs, <b>sellside</b> BELOW swing lows. Price is drawn to these pools to fill orders before it reverses."},
+    {term:"Liquidity hunting",dia:"liqgrab",def:"Price is drawn to the obvious stops — just above swing highs (buyside) and below swing lows (sellside). A <b>liquidity hunt</b> is the engineered spike that trips those stops, fills large orders against them, then reverses. If your stop sat at the obvious level, <b>you were the liquidity</b> — taken out right before the move you wanted."},
+    {term:"Don't be the liquidity",dia:"sweepreclaim",def:"Two habits keep you from being the exit. <b>(1) Put your stop BEYOND the obvious level, not on it</b> — under the sweep wick, not on the round number every stop clusters at. <b>(2) Treat a sweep-and-reclaim as an entry, not a stop-out</b> — when price spikes past a swing low and closes back above it, the hunt is finished and the reversal is your trade (go long the reclaim, stop under the wick). The raid that stops everyone else out is your signal."},
   ]},
   {cat:"Market-maker models · ICT",sub:"How price is engineered — the ICT (Inner Circle Trader) blueprints",items:[
     {term:"MMBM",dia:"mmbm",def:"<b>Market Maker Buy Model.</b> The bullish blueprint: consolidation → a <b>sell program</b> runs sellside liquidity down to a discount low → smart-money reversal → a <b>buy program</b> marks price up through buyside liquidity. Goal: buy the low, don't chase the top."},
@@ -5634,6 +5733,9 @@ const LINES={
     zones:[{x0:44,x1:80,p0:42,p1:60,c:"up",op:0.18,label:"OTE 62–79%"}] },
   liqgrab:{ cap:"spike past the level, then reverse", paths:[{pts:[[6,50],[30,54],[46,86],[52,80],[70,40],[92,34]],c:"foc",w:1.8}],
     refs:[{p:78,c:"n",label:"prior high (stops)"}], dots:[{x:46,p:86,label:"grab",c:"dn",dy:-5}] },
+  sweepreclaim:{ cap:"sweep the lows, reclaim, then run", paths:[{pts:[[6,66],[20,50],[34,44],[46,24],[54,42],[70,60],[92,82]],c:"up",w:2}],
+    refs:[{p:44,c:"n",label:"swing low (obvious stops)"},{p:26,c:"up",label:"your stop → under the wick"}],
+    dots:[{x:46,p:24,label:"sweep & reclaim",c:"up",dy:9}] },
   fvg:{ cap:"fast move leaves a 3-candle gap", paths:[{pts:[[8,40],[30,42],[46,40],[62,74],[86,86]],c:"up",w:2.4}],
     zones:[{x0:50,x1:70,p0:44,p1:66,c:"up",op:0.18,label:"FVG"}] },
   orderblock:{ cap:"last down candle before the move", zones:[{x0:20,x1:34,p0:30,p1:48,c:"dn",op:0.22,label:"OB"}],
