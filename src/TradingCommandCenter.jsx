@@ -110,6 +110,38 @@ async function sSet(key,val){
   catch(e){ mem[key] = val; }   // private mode / quota full -> session-only
 }
 
+/* ---------- auto-run scans ----------
+   Prices are free (Yahoo) and refresh on their own, but each SCAN is a paid AI
+   call, so scans never auto-run unless the user turns ⏱ Auto ON. When it's on, a
+   scanner re-runs itself once when you open its tab — but only if the last scan
+   is stale (older than AUTO_STALE_MS). A fresh scan is left alone, so opening a
+   tab you just scanned won't spend a cent. "Scan / refresh now" buttons are
+   always there regardless of the toggle. Default: OFF. */
+const AUTO_STALE_MS = 30*60*1000;   // re-run a scan only if the last one is older than 30 min
+const autoSubs = [];
+function autoScansOn(){ try{ return window.localStorage.getItem(TCC_PREFIX+"auto:scans")==="true"; }catch(e){ return mem["auto:scans"]===true; } }
+function setAutoScans(v){ try{ window.localStorage.setItem(TCC_PREFIX+"auto:scans", v?"true":"false"); }catch(e){ mem["auto:scans"]=!!v; } autoSubs.forEach(f=>{ try{ f(); }catch(e){} }); }
+function autoSub(f){ autoSubs.push(f); return ()=>{ const i=autoSubs.indexOf(f); if(i>=0) autoSubs.splice(i,1); }; }
+/* Fire runFn once when a scanner mounts (its tab was opened) — and again the
+   moment Auto is flipped on — IF Auto is on and the last scan is stale. `ready`
+   guards against firing before the stored last-scan time has loaded; a ref makes
+   sure it never loops or double-spends within a single mount. */
+function useAutoScan(ready, lastTs, busy, runFn){
+  const ran = useRef(false);
+  const fn = useRef(runFn); fn.current = runFn;
+  useEffect(()=>{
+    function maybe(){
+      if(ran.current || !ready || busy || !autoScansOn()) return;
+      const stale = !lastTs || (Date.now()-lastTs) > AUTO_STALE_MS;
+      if(!stale) return;
+      ran.current = true;
+      try{ fn.current(); }catch(e){}
+    }
+    maybe();
+    return autoSub(maybe);
+  },[ready,lastTs,busy]);
+}
+
 /* ---------- api helpers ---------- */
 /* One global gate for every AI call in the app: requests are serialized with a
    minimum gap, retried with real backoff, and a rate-limit trips a visible
@@ -364,6 +396,9 @@ export default function TradingCommandCenter(){
   const [showHelp,setShowHelp]=useState(true);
   useEffect(()=>{ (async()=>{ try{ const s=await sGet("ui:showHelp"); if(s===false) setShowHelp(false); }catch(e){} })(); },[]);
   useEffect(()=>{ sSet("ui:showHelp",showHelp); },[showHelp]);
+  const [autoScans,setAutoScansState]=useState(false);
+  useEffect(()=>{ setAutoScansState(autoScansOn()); },[]);
+  const toggleAuto=()=>{ const v=!autoScansOn(); setAutoScans(v); setAutoScansState(v); };
   const firstSave=useRef(true);
 
   // load
@@ -476,7 +511,10 @@ export default function TradingCommandCenter(){
             <div style={{color:"var(--faint)",fontSize:12.5}}>NO SIGNAL = NO TRADE</div>
             <div style={{color:"var(--brass-dim)",fontSize:12,marginTop:2}}>{tradingDaysLeft("monthly")} trading days left this month</div>
             <AiMeter/>
-            <button onClick={()=>setShowHelp(v=>!v)} className="mono" style={{marginTop:6,border:"1px solid var(--line2)",background:showHelp?"transparent":"var(--bg3)",color:showHelp?"var(--dim)":"var(--brass)",borderRadius:7,padding:"4px 10px",fontSize:11.5,fontWeight:700,cursor:"pointer"}}>{showHelp?"? tips ON":"? tips OFF"}</button>
+            <div style={{marginTop:6,display:"flex",gap:6,justifyContent:"flex-end",flexWrap:"wrap"}}>
+              <button onClick={()=>setShowHelp(v=>!v)} className="mono" style={{border:"1px solid var(--line2)",background:showHelp?"transparent":"var(--bg3)",color:showHelp?"var(--dim)":"var(--brass)",borderRadius:7,padding:"4px 10px",fontSize:11.5,fontWeight:700,cursor:"pointer"}}>{showHelp?"? tips ON":"? tips OFF"}</button>
+              <button onClick={toggleAuto} title="When ON, the Runner and Watchlist scans re-run themselves when you open the tab — but only if the last scan is over 30 min old. Each scan is a paid AI call; prices stay free either way." className="mono" style={{border:"1px solid "+(autoScans?"var(--brass)":"var(--line2)"),background:autoScans?"var(--bg3)":"transparent",color:autoScans?"var(--brass)":"var(--dim)",borderRadius:7,padding:"4px 10px",fontSize:11.5,fontWeight:700,cursor:"pointer"}}>{autoScans?"⏱ Auto ON":"⏱ Auto OFF"}</button>
+            </div>
           </div>
         </div>
 
@@ -3293,8 +3331,10 @@ function RunnerScan({watch}){
   const [seed,setSeed]=useState(null);
   const [minScore,setMinScore]=useState(0);
   const [chart,setChart]=useState(null);
+  const [ready,setReady]=useState(false);
 
-  useEffect(()=>{ (async()=>{ const s=await sGet("runner_scan"); if(s&&Array.isArray(s.rows)){ setRows(s.rows); setWhen(s.when||null); } })(); },[]);
+  useEffect(()=>{ (async()=>{ const s=await sGet("runner_scan"); if(s&&Array.isArray(s.rows)){ setRows(s.rows); setWhen(s.when||null); } setReady(true); })(); },[]);
+  useAutoScan(ready, when, loading, ()=>scan());
 
   async function scan(){
     if(loading) return;
@@ -3518,8 +3558,10 @@ function Watchlist({watch,setWatch,quotes,setQuotes}){
   const [bias,setBias]=useState({}); const [scanning,setScanning]=useState(false);
   const [scanData,setScanData]=useState(null);
   const [chartRow,setChartRow]=useState(null);
+  const [biasWhen,setBiasWhen]=useState(null); const [biasReady,setBiasReady]=useState(false);
   useEffect(()=>{ setScanData(null); },[sel]);
-  useEffect(()=>{(async()=>{ const b=await sGet("watch:bias"); if(b&&typeof b==="object") setBias(b); })();},[]);
+  useEffect(()=>{(async()=>{ const b=await sGet("watch:bias"); if(b&&typeof b==="object") setBias(b); const t=await sGet("watch:bias:t"); if(t) setBiasWhen(t); setBiasReady(true); })();},[]);
+  useAutoScan(biasReady, biasWhen, scanning, ()=>scanBias());
   async function scanBias(){
     if(scanning) return; setScanning(true); setErr("");
     try{
@@ -3529,7 +3571,7 @@ function Watchlist({watch,setWatch,quotes,setQuotes}){
       const j=extractJson(getText(data));
       if(j&&typeof j==="object"){
         const clean={}; for(const k of Object.keys(j)){ const v=String(j[k]).toLowerCase(); clean[k.toUpperCase()]= v.includes("bull")?"bullish":v.includes("bear")?"bearish":"neutral"; }
-        const merged={...bias,...clean}; setBias(merged); await sSet("watch:bias",merged); logScan("Bias scan", Object.keys(clean), Object.keys(clean).slice(0,6).map(k=>({s:k,note:clean[k]})));
+        const merged={...bias,...clean}; setBias(merged); await sSet("watch:bias",merged); const t=Date.now(); setBiasWhen(t); await sSet("watch:bias:t",t); logScan("Bias scan", Object.keys(clean), Object.keys(clean).slice(0,6).map(k=>({s:k,note:clean[k]})));
       } else setErr("Couldn't parse the scan — try again.");
     }catch(e){ setErr(aiErr(e,"Scan")); }
     setScanning(false);
