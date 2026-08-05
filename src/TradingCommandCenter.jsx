@@ -494,7 +494,7 @@ export default function TradingCommandCenter(){
   useEffect(()=>{ if(loaded) sSet("watchlist:tickers",watch); },[watch,loaded]);
   useEffect(()=>{ if(loaded && Object.keys(quotes).length) sSet("quotes:last",quotes); },[quotes,loaded]);
 
-  const TABS=[["guide","Guide"],["today","Today"],["dash","Dashboard"],["journal","Journal"],["review","Review"],["watch","Watchlist"],["strat","Strat"],["runner","Runner"],["scans","Scans"],["sectors","Sectors"],["tools","Tools"],["news","News"],["play","Playbook"],["library","Library"],["tutor","Tutor"]];
+  const TABS=[["guide","Guide"],["today","Today"],["dash","Dashboard"],["journal","Journal"],["review","Review"],["watch","Watchlist"],["strat","Strat"],["runner","Runner"],["scans","Scans"],["sectors","Sectors"],["tools","Tools"],["news","News"],["play","Playbook"],["test","Test"],["library","Library"],["tutor","Tutor"]];
 
   return (
     <HelpCtx.Provider value={showHelp}>
@@ -551,6 +551,7 @@ export default function TradingCommandCenter(){
         {tab==="tools" && <Tools watch={watch} setWatch={setWatch} />}
         {tab==="news" && <News watch={watch} />}
         {tab==="play" && <Playbook />}
+        {tab==="test" && <TestZone />}
         {tab==="library" && <KnowledgeLibrary />}
         {tab==="tutor" && <Tutor trades={trades} />}
       </div>
@@ -1325,9 +1326,8 @@ function Guide(){
       </div>
 
       <div>
-        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}><div><div className="eyebrow" style={{marginBottom:4}}>Reference</div><h3 className="disp" style={{margin:0,fontSize:19,fontWeight:700}}>Glossary — every term</h3></div><Help text="Plain-language definitions of every term in the app — Strat bars, structure, ICT, the Greeks, options pricing, volume, and your risk system. The same glossary also lives in the Playbook."/></div>
-        <p style={{margin:"8px 0 16px",fontSize:14,color:"var(--dim)",lineHeight:1.5}}>Grouped by topic — your quick reference when a term trips you up.</p>
-        <GlossaryView/>
+        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}><div><div className="eyebrow" style={{marginBottom:4}}>Reference</div><h3 className="disp" style={{margin:0,fontSize:19,fontWeight:700}}>Glossary &amp; Test moved to the Playbook</h3></div></div>
+        <p style={{margin:"8px 0 0",fontSize:14,color:"var(--dim)",lineHeight:1.6}}>The full illustrated glossary — every term with a diagram — now lives in the <b style={{color:"var(--brass)"}}>Playbook</b> tab, next to the new <b style={{color:"var(--brass)"}}>Test</b> that quizzes you from the basics up and grades you. Head there to study and drill.</p>
       </div>
     </div>
   );
@@ -5069,64 +5069,64 @@ const GLOSSARY=[
     {term:"Holy Grail (3-1)",dia:"holy",def:"An <b>outside bar (Type 3) then an inside bar (Type 1)</b> — a broad, volatile range followed by a tight coil inside it. The break of that inside bar is a clean, defined entry with a small stop."},
   ]},
   {cat:"FTFC & structure",sub:"Reading the environment before you enter",items:[
-    {term:"FTFC",def:"<b>Full Time Frame Continuity</b>: month, week, day, 60m… all the same color — all up or all down. The highest-probability directional environment; trade WITH it."},
-    {term:"Alignment",def:"Checking that the timeframe you're triggering on agrees with the ones above it. Aligned = go; conflicting = you're probably inside a range."},
-    {term:"Broadening",def:"When timeframes disagree, price often just expands a range (higher highs and lower lows). Trade the edges — the swing high/low — not continuation."},
+    {term:"FTFC",dia:"ftfc",def:"<b>Full Time Frame Continuity</b>: month, week, day, 60m… all the same color — all up or all down. The highest-probability directional environment; trade WITH it."},
+    {term:"Alignment",dia:"alignment",def:"Checking that the timeframe you're triggering on agrees with the ones above it. Aligned = go; conflicting = you're probably inside a range."},
+    {term:"Broadening",dia:"broadening",def:"When timeframes disagree, price often just expands a range (higher highs and lower lows). Trade the edges — the swing high/low — not continuation."},
   ]},
   {cat:"Market structure",sub:"Reading trend from swing points (price action / ICT)",items:[
-    {term:"Swing high / low",def:"A <b>swing high</b> is a candle whose high tops the candles on both sides; a <b>swing low</b> bottoms its neighbors. These pivots are the skeleton of structure — and where stops (liquidity) rest."},
-    {term:"HH / HL",def:"<b>Higher highs and higher lows</b> = bullish structure, an uptrend. The trend is intact as long as price keeps printing them."},
-    {term:"LH / LL",def:"<b>Lower highs and lower lows</b> = bearish structure, a downtrend — the mirror of the bullish case."},
-    {term:"BOS",def:"<b>Break of Structure</b> — price breaks the most recent swing point IN the trend direction. Confirms continuation."},
-    {term:"CHoCH",def:"<b>Change of Character</b> — the FIRST break against the trend (e.g. taking out a higher low in an uptrend). The earliest reversal warning."},
-    {term:"MSS",def:"<b>Market Structure Shift</b> — a decisive break of structure, usually with displacement, that flips the near-term bias and confirms the CHoCH."},
-    {term:"Buyside / sellside",def:"Resting stop orders. <b>Buyside</b> liquidity sits ABOVE swing highs, <b>sellside</b> BELOW swing lows. Price is drawn to these pools to fill orders before it reverses."},
+    {term:"Swing high / low",dia:"swing",def:"A <b>swing high</b> is a candle whose high tops the candles on both sides; a <b>swing low</b> bottoms its neighbors. These pivots are the skeleton of structure — and where stops (liquidity) rest."},
+    {term:"HH / HL",dia:"hhhl",def:"<b>Higher highs and higher lows</b> = bullish structure, an uptrend. The trend is intact as long as price keeps printing them."},
+    {term:"LH / LL",dia:"lhll",def:"<b>Lower highs and lower lows</b> = bearish structure, a downtrend — the mirror of the bullish case."},
+    {term:"BOS",dia:"bos",def:"<b>Break of Structure</b> — price breaks the most recent swing point IN the trend direction. Confirms continuation."},
+    {term:"CHoCH",dia:"choch",def:"<b>Change of Character</b> — the FIRST break against the trend (e.g. taking out a higher low in an uptrend). The earliest reversal warning."},
+    {term:"MSS",dia:"mss",def:"<b>Market Structure Shift</b> — a decisive break of structure, usually with displacement, that flips the near-term bias and confirms the CHoCH."},
+    {term:"Buyside / sellside",dia:"liquidity",def:"Resting stop orders. <b>Buyside</b> liquidity sits ABOVE swing highs, <b>sellside</b> BELOW swing lows. Price is drawn to these pools to fill orders before it reverses."},
   ]},
   {cat:"Market-maker models · ICT",sub:"How price is engineered — the ICT (Inner Circle Trader) blueprints",items:[
-    {term:"MMBM",def:"<b>Market Maker Buy Model.</b> The bullish blueprint: consolidation → a <b>sell program</b> runs sellside liquidity down to a discount low → smart-money reversal → a <b>buy program</b> marks price up through buyside liquidity. Goal: buy the low, don't chase the top."},
-    {term:"MMSM",def:"<b>Market Maker Sell Model</b> — the inverse: consolidation → a buy program lifts price into premium and runs buyside liquidity → reversal at the high → a sell program marks price down. Goal: sell / buy puts at the high."},
+    {term:"MMBM",dia:"mmbm",def:"<b>Market Maker Buy Model.</b> The bullish blueprint: consolidation → a <b>sell program</b> runs sellside liquidity down to a discount low → smart-money reversal → a <b>buy program</b> marks price up through buyside liquidity. Goal: buy the low, don't chase the top."},
+    {term:"MMSM",dia:"mmsm",def:"<b>Market Maker Sell Model</b> — the inverse: consolidation → a buy program lifts price into premium and runs buyside liquidity → reversal at the high → a sell program marks price down. Goal: sell / buy puts at the high."},
     {term:"Consolidation",def:"The sideways base a model starts from. Orders build on both sides before the engineered move begins."},
     {term:"Buy / sell program",def:"The delivered leg. A <b>buy program</b> marks price up, a <b>sell program</b> marks it down — each grabbing the liquidity resting on that side."},
     {term:"Smart-money reversal",def:"The turn at the extreme (a low in MMBM, a high in MMSM) where the campaign flips from grabbing liquidity to delivering the real move."},
-    {term:"Liquidity grab",def:"A quick spike beyond a swing high/low that trips resting stops, then reverses. The fuel for the turn — also called a stop run or raid."},
-    {term:"Fair value gap",def:"<b>FVG</b> — a 3-candle imbalance where price moved so fast it left a gap. Price often returns to 'fill' it, making it a common entry or target."},
-    {term:"Order block",def:"The last opposing candle before a strong move — a <b>bullish OB</b> is the last down candle before a rally. Institutions often re-enter from it."},
-    {term:"Premium / discount",def:"Split a range at its 50% (equilibrium). Above = <b>premium</b> (look to sell); below = <b>discount</b> (look to buy). Buy low, sell high, framed by the range."},
-    {term:"Displacement",def:"A strong, fast, one-sided move that creates FVGs — the fingerprint of institutional intent and the trigger for a structure shift."},
-    {term:"OTE",def:"<b>Optimal Trade Entry</b> — the ~62–79% Fibonacci retracement of a displacement leg, a high-probability zone to enter the pullback."},
+    {term:"Liquidity grab",dia:"liqgrab",def:"A quick spike beyond a swing high/low that trips resting stops, then reverses. The fuel for the turn — also called a stop run or raid."},
+    {term:"Fair value gap",dia:"fvg",def:"<b>FVG</b> — a 3-candle imbalance where price moved so fast it left a gap. Price often returns to 'fill' it, making it a common entry or target."},
+    {term:"Order block",dia:"orderblock",def:"The last opposing candle before a strong move — a <b>bullish OB</b> is the last down candle before a rally. Institutions often re-enter from it."},
+    {term:"Premium / discount",dia:"premdisc",def:"Split a range at its 50% (equilibrium). Above = <b>premium</b> (look to sell); below = <b>discount</b> (look to buy). Buy low, sell high, framed by the range."},
+    {term:"Displacement",dia:"displacement",def:"A strong, fast, one-sided move that creates FVGs — the fingerprint of institutional intent and the trigger for a structure shift."},
+    {term:"OTE",dia:"ote",def:"<b>Optimal Trade Entry</b> — the ~62–79% Fibonacci retracement of a displacement leg, a high-probability zone to enter the pullback."},
   ]},
   {cat:"Triggers & pivots",sub:"Where you get in, and where you aim",items:[
-    {term:"Trigger",def:"The exact price that puts you in: the break of the prior bar's high (long) or low (short). <b>No break, no trade</b> — no matter how good it looks."},
-    {term:"Pivot",def:"A prior swing high or low. Acts as both a magnet (target) and a wall (support/resistance). Your target is the NEXT pivot."},
-    {term:"Stop",def:"The level just beyond your trigger candle that proves the setup wrong. It defines your risk — and therefore your position size."},
+    {term:"Trigger",dia:"up2",def:"The exact price that puts you in: the break of the prior bar's high (long) or low (short). <b>No break, no trade</b> — no matter how good it looks."},
+    {term:"Pivot",dia:"swing",def:"A prior swing high or low. Acts as both a magnet (target) and a wall (support/resistance). Your target is the NEXT pivot."},
+    {term:"Stop",dia:"sizeoffstop",def:"The level just beyond your trigger candle that proves the setup wrong. It defines your risk — and therefore your position size."},
     {term:"Magnitude",def:"The distance from trigger to the next pivot — the room the trade has to run. Weigh it before entering: small magnitude = small reward, often not worth it."},
   ]},
   {cat:"Pivot indicators & horizon",sub:"Calculated levels, and how long you hold",items:[
-    {term:"Pivot points",def:"A classic indicator: from the prior period's High, Low and Close it plots a central Pivot (PP) with resistances (R1–R3) and supports (S1–S3). Price reacts at these — use them as intraday targets, stops, and bias (holding above PP = bullish lean). Build them in the Tools tab."},
-    {term:"Fibonacci pivots",def:"Same PP, but the R/S levels sit at 38.2%, 61.8% and 100% of the prior range instead of standard multiples — for traders who find price respects the fib ratios more cleanly."},
-    {term:"Camarilla",def:"A tighter pivot variant (R1–R4 / S1–S4) built off the close. R3/S3 are common reversal zones; a break of R4/S4 signals a trend day."},
-    {term:"Swing trade",def:"A multi-day hold — days to a few weeks — off higher-timeframe setups (Daily/Weekly FTFC, HTF order blocks). Wider stops, bigger targets. For options use more DTE (30–60+) so overnight theta doesn't bleed you."},
+    {term:"Pivot points",dia:"pivots",def:"A classic indicator: from the prior period's High, Low and Close it plots a central Pivot (PP) with resistances (R1–R3) and supports (S1–S3). Price reacts at these — use them as intraday targets, stops, and bias (holding above PP = bullish lean). Build them in the Tools tab."},
+    {term:"Fibonacci pivots",dia:"pivots",def:"Same PP, but the R/S levels sit at 38.2%, 61.8% and 100% of the prior range instead of standard multiples — for traders who find price respects the fib ratios more cleanly."},
+    {term:"Camarilla",dia:"pivots",def:"A tighter pivot variant (R1–R4 / S1–S4) built off the close. R3/S3 are common reversal zones; a break of R4/S4 signals a trend day."},
+    {term:"Swing trade",dia:"trend",def:"A multi-day hold — days to a few weeks — off higher-timeframe setups (Daily/Weekly FTFC, HTF order blocks). Wider stops, bigger targets. For options use more DTE (30–60+) so overnight theta doesn't bleed you."},
     {term:"Horizon",def:"How long you hold: a <b>scalp</b> is minutes, a <b>day</b> trade closes by the bell, a <b>swing</b> runs days–weeks, a <b>position</b> runs weeks–months. Match your timeframe, DTE and stop to it. Tagged on every journal entry."},
   ]},
   {cat:"Options Greeks",sub:"What moves your contract besides direction",items:[
-    {term:"Delta",def:"How much the option moves per $1 move in the stock, and roughly the probability it finishes in the money. ~0.50 = at the money."},
-    {term:"Gamma",def:"How fast delta itself changes. Highest at the money and near expiry — it's why short-dated options whip around so hard."},
-    {term:"Theta",def:"Daily time decay in dollars. It bleeds long options every day and accelerates in the last ~2 weeks. Time is the rent you pay to be long premium."},
-    {term:"Vega",def:"Sensitivity to implied volatility. Long options gain when IV rises and lose when it falls — the mechanism behind a <b>crush</b>."},
+    {term:"Delta",dia:"delta",def:"How much the option moves per $1 move in the stock, and roughly the probability it finishes in the money. ~0.50 = at the money."},
+    {term:"Gamma",dia:"gamma",def:"How fast delta itself changes. Highest at the money and near expiry — it's why short-dated options whip around so hard."},
+    {term:"Theta",dia:"theta",def:"Daily time decay in dollars. It bleeds long options every day and accelerates in the last ~2 weeks. Time is the rent you pay to be long premium."},
+    {term:"Vega",dia:"vega",def:"Sensitivity to implied volatility. Long options gain when IV rises and lose when it falls — the mechanism behind a <b>crush</b>."},
   ]},
   {cat:"Options risk & terms",sub:"The premium-side vocabulary",items:[
     {term:"IV",def:"<b>Implied volatility</b> — the market's expected movement priced into the option. High IV = expensive premium, and it inflates ahead of known events."},
-    {term:"IV crush",def:"The sharp drop in IV right after an event (earnings, Fed, CPI). It can wipe out a long option even when you got the direction right."},
-    {term:"Expected move",def:"The move already priced in by the premium for an event. To profit buying options into it, the actual move must BEAT this — otherwise IV crush eats you."},
-    {term:"Standard deviation (σ)",def:"The statistical range price is likely to stay inside, built from IV and time: <b>±1σ ≈ 68%</b> of the time, <b>±2σ ≈ 95%</b>. 1σ = price × IV × √(days/365) — the same math as the expected move. Build the bands in the Tools tab."},
+    {term:"IV crush",dia:"ivcrush",def:"The sharp drop in IV right after an event (earnings, Fed, CPI). It can wipe out a long option even when you got the direction right."},
+    {term:"Expected move",dia:"expectedmove",def:"The move already priced in by the premium for an event. To profit buying options into it, the actual move must BEAT this — otherwise IV crush eats you."},
+    {term:"Standard deviation (σ)",dia:"stddev",def:"The statistical range price is likely to stay inside, built from IV and time: <b>±1σ ≈ 68%</b> of the time, <b>±2σ ≈ 95%</b>. 1σ = price × IV × √(days/365) — the same math as the expected move. Build the bands in the Tools tab."},
     {term:"DTE",def:"<b>Days to expiration.</b> Fewer DTE = more gamma and faster theta — more explosive, and more fragile."},
-    {term:"ITM / ATM / OTM",def:"In / at / out of the money. ITM carries intrinsic value, OTM is all time value, ATM sits right at the strike."},
-    {term:"Extrinsic value",def:"The part of the price that is NOT intrinsic — time value plus volatility. This is exactly the piece theta and IV crush destroy."},
+    {term:"ITM / ATM / OTM",dia:"moneyness",def:"In / at / out of the money. ITM carries intrinsic value, OTM is all time value, ATM sits right at the strike."},
+    {term:"Extrinsic value",dia:"extrinsic",def:"The part of the price that is NOT intrinsic — time value plus volatility. This is exactly the piece theta and IV crush destroy."},
   ]},
   {cat:"Money management",sub:"The part that keeps you in the game — your reinforcement zone",items:[
-    {term:"Size off stop",def:"Set size from your risk, not your conviction. <b>Size = dollars risked ÷ (entry − stop).</b> The stop dictates the size, never the other way around."},
+    {term:"Size off stop",dia:"sizeoffstop",def:"Set size from your risk, not your conviction. <b>Size = dollars risked ÷ (entry − stop).</b> The stop dictates the size, never the other way around."},
     {term:"Risk per trade",def:"A fixed fraction of the account (e.g. 1%) you'll lose on any single trade. Keeps one bad trade from mattering to the account."},
-    {term:"R multiple",def:"Reward measured in units of risk. Risk $100, make $300 = <b>+3R</b>. Thinking in R makes wins and losses comparable across different sizes."},
+    {term:"R multiple",dia:"rmultiple",def:"Reward measured in units of risk. Risk $100, make $300 = <b>+3R</b>. Thinking in R makes wins and losses comparable across different sizes."},
     {term:"Take profit at pivot",def:"Exit at the next pivot — your logical target. Holding past it on hope tends to give the gain right back."},
     {term:"Trigger, not hope",def:"Enter only on the trigger, exit only on the stop or target. Emotion-based holds are how accounts bleed out."},
   ]},
@@ -5139,7 +5139,7 @@ const GLOSSARY=[
   {cat:"Futures & the open",sub:"The overnight tone that sets your session",items:[
     {term:"Index futures",def:"Nearly-24h contracts on the indexes: <b>RTY</b> = Russell 2000 (your IWM), <b>ES</b> = S&P 500 (SPY), <b>NQ</b> = Nasdaq 100 (QQQ), <b>YM</b> = Dow. Before the cash open they show the overnight tone and where price is likely to GAP."},
     {term:"Why futures move options",def:"A big overnight futures move can gap your option straight through your entry or stop before you can act, it sets the opening direction, and it can inflate IV at the open. Check futures pre-market so a gap doesn't blindside you."},
-    {term:"Gap risk",def:"When price opens far from the prior close because of overnight futures action. Stops don't protect you across a gap — the option can open past your stop. Size for it, and be wary of holding through events."},
+    {term:"Gap risk",dia:"gap",def:"When price opens far from the prior close because of overnight futures action. Stops don't protect you across a gap — the option can open past your stop. Size for it, and be wary of holding through events."},
     {term:"Risk-on / risk-off",def:"Risk-<b>on</b> = futures up, money into stocks (favors calls); risk-<b>off</b> = futures down, money to safety (favors puts). Small caps (RTY/IWM) swing the hardest on this — they lead when risk is on and bleed when it's off."},
   ]},
   {cat:"Options pricing & execution",sub:"What you see on the chain when you go to fill",items:[
@@ -5149,7 +5149,7 @@ const GLOSSARY=[
     {term:"Mid",def:"The midpoint of bid and ask — a fair estimate of value and a realistic limit price to try to fill at."},
     {term:"Spread",def:"The gap between bid and ask. Tight = liquid and cheap to trade; a wide spread quietly eats your edge on BOTH entry and exit."},
     {term:"Liquidity",def:"How easily you can trade a strike — high open interest and volume with a tight spread means clean fills and easy scaling. Thin strikes trap you."},
-    {term:"Moneyness",def:"Where the strike sits vs. the stock: <b>ITM</b> (already profitable, pricier, higher delta), <b>ATM</b> (at the strike), <b>OTM</b> (needs the move to come, cheaper, lower delta)."},
+    {term:"Moneyness",dia:"moneyness",def:"Where the strike sits vs. the stock: <b>ITM</b> (already profitable, pricier, higher delta), <b>ATM</b> (at the strike), <b>OTM</b> (needs the move to come, cheaper, lower delta)."},
   ]},
   {cat:"Reading volume",sub:"Volume tells you if a move is real",items:[
     {term:"Expansion",def:"Volume rising into a move — it CONFIRMS the break. A breakout on above-average volume is far more trustworthy."},
@@ -5158,24 +5158,24 @@ const GLOSSARY=[
   ]},
   {cat:"Your risk system",sub:"The vocabulary of the Examine calculator",items:[
     {term:"Invalidation",def:"The underlying price where the trade is simply WRONG (e.g. it reclaims the level you shorted). Structure sets the stop, not a flat %."},
-    {term:"Structural stop",def:"A stop placed at the invalidation level (converted to a premium via delta), instead of an arbitrary percentage. The 40–50% rule is the guardrail on top."},
-    {term:"Risk : reward (RR)",def:"Reward-if-right ÷ risk-if-wrong. Your gate: <b>1:3 or better = go</b>, under 1:2 = skip. At 1:3 you can be wrong more than right and still profit."},
+    {term:"Structural stop",dia:"sizeoffstop",def:"A stop placed at the invalidation level (converted to a premium via delta), instead of an arbitrary percentage. The 40–50% rule is the guardrail on top."},
+    {term:"Risk : reward (RR)",dia:"rmultiple",def:"Reward-if-right ÷ risk-if-wrong. Your gate: <b>1:3 or better = go</b>, under 1:2 = skip. At 1:3 you can be wrong more than right and still profit."},
     {term:"Position sizing",def:"Contracts sized from your risk budget, not your conviction. Enter what you'll risk today; the contract count follows."},
-    {term:"Scale out",def:"Selling in pieces into strength (T1/T2/T3) instead of all at once. The one trait every green trade in your journal shared — it banks the gain before it gives back."},
+    {term:"Scale out",dia:"scaleout",def:"Selling in pieces into strength (T1/T2/T3) instead of all at once. The one trait every green trade in your journal shared — it banks the gain before it gives back."},
   ]},
   {cat:"Moving averages, VWAP & trend tools",sub:"The trend filter — price action confirmation",items:[
-    {term:"Moving average (MA)",def:"The average closing price over the last N bars, drawn as a line that smooths out noise so you can see the trend. Price above a rising MA = uptrend; below a falling MA = downtrend."},
+    {term:"Moving average (MA)",dia:"ema",def:"The average closing price over the last N bars, drawn as a line that smooths out noise so you can see the trend. Price above a rising MA = uptrend; below a falling MA = downtrend."},
     {term:"EMA",def:"<b>Exponential Moving Average</b> — a moving average that weights recent bars more heavily, so it reacts faster than a plain (simple) MA. Common lengths: <b>9 / 21</b> (fast, scalping), <b>50</b> (intermediate trend), <b>200</b> (the big-picture trend line). Trading with the EMAs stacked in your direction is higher-odds; getting caught <i>between</i> them is chop/no-man's-land."},
     {term:"50 EMA",def:"The 50-period EMA — a widely-watched intermediate trend line. Above it = bullish lean, below it = bearish. Many traders only take longs above the 50 and shorts below it."},
     {term:"200 EMA",def:"The 200-period EMA — the long-term trend divider. Which side of it price is on tells you the dominant regime; it also acts as major support/resistance that a lot of size defends."},
     {term:"3-bar over MA",def:"Three consecutive bars closing on the same side of a moving average — a simple confirmation that a trend has taken hold. The idea from the recap: once you get it, you 'ride the trend out' rather than fading it."},
-    {term:"VWAP",def:"<b>Volume-Weighted Average Price</b> — the average price weighted by volume, reset each session. It's the day's 'fair value' line that institutions benchmark fills against. Above VWAP = buyers in control (bullish); below = sellers in control (bearish). A reclaim or rejection of VWAP is a common intraday trigger."},
-    {term:"ORB",def:"<b>Opening Range Breakout</b> — mark the high and low of the first X minutes (a <b>15-min</b> or <b>30-min ORB</b> is common), then trade the break of that range as the session's direction. Pairs with EMA/VWAP: an ORB break in the direction of the trend is stronger."},
-    {term:"Opening range",def:"The high-to-low band of the first few minutes of the session. It frames the day's initial balance — breaks above/below it often set the tone, and it acts as intraday support/resistance afterward."},
+    {term:"VWAP",dia:"vwap",def:"<b>Volume-Weighted Average Price</b> — the average price weighted by volume, reset each session. It's the day's 'fair value' line that institutions benchmark fills against. Above VWAP = buyers in control (bullish); below = sellers in control (bearish). A reclaim or rejection of VWAP is a common intraday trigger."},
+    {term:"ORB",dia:"orb",def:"<b>Opening Range Breakout</b> — mark the high and low of the first X minutes (a <b>15-min</b> or <b>30-min ORB</b> is common), then trade the break of that range as the session's direction. Pairs with EMA/VWAP: an ORB break in the direction of the trend is stronger."},
+    {term:"Opening range",dia:"orb",def:"The high-to-low band of the first few minutes of the session. It frames the day's initial balance — breaks above/below it often set the tone, and it acts as intraday support/resistance afterward."},
     {term:"Price action",def:"Reading the raw movement of price — bars, structure, levels — to make decisions, rather than relying on lagging indicators. The Strat is a price-action method; EMAs/VWAP are filters on top."},
     {term:"Market structure",def:"The pattern of swing highs and lows that defines trend: higher-highs & higher-lows = uptrend, lower-highs & lower-lows = downtrend. A <b>lower high</b> after an uptrend (or the break of structure) is an early reversal tell — the core read in the recap."},
-    {term:"Trend",def:"The prevailing direction of price. <b>Uptrend</b> = HH/HL, price above rising EMAs & VWAP. <b>Downtrend</b> = LH/LL, price below falling EMAs & VWAP. 'Trade with the trend' means aligning your trigger with this backdrop."},
-    {term:"Support / Resistance",def:"Price levels where moves tend to stall or reverse — <b>support</b> below (buyers step in), <b>resistance</b> above (sellers step in). Prior-day highs/lows, session opens, round numbers, and the 50/200 EMAs all act as these."},
+    {term:"Trend",dia:"trend",def:"The prevailing direction of price. <b>Uptrend</b> = HH/HL, price above rising EMAs & VWAP. <b>Downtrend</b> = LH/LL, price below falling EMAs & VWAP. 'Trade with the trend' means aligning your trigger with this backdrop."},
+    {term:"Support / Resistance",dia:"sr",def:"Price levels where moves tend to stall or reverse — <b>support</b> below (buyers step in), <b>resistance</b> above (sellers step in). Prior-day highs/lows, session opens, round numbers, and the 50/200 EMAs all act as these."},
     {term:"OHLC",def:"<b>Open-High-Low-Close</b> — the four prices each bar records. 'Open-high, close-low' = a bar that opened strong and got sold (bearish); 'open-low, close-high' = opened weak and got bought (bullish). It's the shape of the candle telling you who won the bar."},
     {term:"EMA / VWAP trend filter",def:"The optional confirm in your Examine checklist: for a LONG, price above the 50 EMA <i>and</i> VWAP; for a SHORT, below both. It's experimental — log it on your trades and let your own win-rate data decide if it improves your edge. A filter, not a signal; don't force it."},
   ]},
@@ -5205,7 +5205,104 @@ const DIAS={
   holy:{ bars:[{x:110,hi:86,lo:18,op:26,cl:80,c:"up",tag:"3 outside"},{x:180,hi:64,lo:40,op:46,cl:58,c:"n",tag:"1 inside"}],
     refs:[] },
 };
+/* Schematic diagrams (lines / curves / zones) for the non-candle concepts. */
+const LINES={
+  // ---- market structure ----
+  swing:{ cap:"peak / trough — the skeleton of trend", paths:[{pts:[[6,34],[20,64],[34,40],[50,78],[64,46],[80,84],[94,54]],c:"foc",w:2}],
+    dots:[{x:50,p:78,label:"swing high",c:"br",dy:-6},{x:34,p:40,label:"swing low",c:"n",dy:14}] },
+  hhhl:{ cap:"higher highs + higher lows = uptrend", paths:[{pts:[[6,20],[20,46],[32,30],[46,62],[58,46],[72,82],[86,66]],c:"up",w:2}],
+    tags:[{x:46,p:70,label:"HH",c:"up"},{x:72,p:90,label:"HH",c:"up"},{x:32,p:22,label:"HL",c:"up"},{x:58,p:38,label:"HL",c:"up"}] },
+  lhll:{ cap:"lower highs + lower lows = downtrend", paths:[{pts:[[6,82],[18,56],[30,68],[44,34],[56,48],[70,16],[84,30]],c:"dn",w:2}],
+    tags:[{x:18,p:64,label:"LH",c:"dn"},{x:44,p:26,label:"LL",c:"dn"},{x:30,p:76,label:"LH",c:"dn"},{x:70,p:8,label:"LL",c:"dn"}] },
+  bos:{ cap:"break of structure = continuation", paths:[{pts:[[6,30],[20,55],[32,42],[48,60],[62,48],[88,84]],c:"up",w:2}],
+    refs:[{p:60,c:"n",label:"prior high"}], dots:[{x:70,p:64,label:"BOS ▲",c:"up",dy:-6,anchor:"end"}] },
+  choch:{ cap:"first break against trend = reversal warning", paths:[{pts:[[6,28],[20,58],[34,44],[50,66],[64,50],[88,32]],c:"foc",w:2}],
+    refs:[{p:44,c:"n",label:"last higher low"}], dots:[{x:76,p:40,label:"CHoCH ▼",c:"dn",dy:14}] },
+  mss:{ cap:"decisive break + displacement", paths:[{pts:[[6,42],[24,48],[40,44],[54,50],[88,88]],c:"up",w:2.2}],
+    refs:[{p:50,c:"n",label:"structure"}], dots:[{x:72,p:68,label:"MSS ▲",c:"up",dy:-4}] },
+  liquidity:{ cap:"stops rest above highs & below lows", paths:[{pts:[[6,42],[28,72],[50,44],[72,72],[94,42]],c:"foc",w:1.8}],
+    refs:[{p:80,c:"foc",label:"buyside ≡"},{p:34,c:"dn",label:"sellside ≡"}] },
+  // ---- ICT models ----
+  mmbm:{ cap:"consolidation → run lows → mark up", zones:[{x0:4,x1:26,p0:44,p1:60,c:"n",op:0.14,label:"base"}],
+    paths:[{pts:[[4,52],[26,52],[40,24],[54,30],[72,64],[92,84]],c:"foc",w:2}],
+    dots:[{x:40,p:24,label:"discount low",c:"up",dy:15},{x:54,p:30,label:"reversal",c:"br",dy:-7,anchor:"end"}] },
+  mmsm:{ cap:"consolidation → run highs → mark down", zones:[{x0:4,x1:26,p0:40,p1:56,c:"n",op:0.14,label:"base"}],
+    paths:[{pts:[[4,48],[26,48],[40,76],[54,70],[72,36],[92,16]],c:"foc",w:2}],
+    dots:[{x:40,p:76,label:"premium high",c:"dn",dy:-7},{x:54,p:70,label:"reversal",c:"br",dy:16,anchor:"end"}] },
+  premdisc:{ cap:"split the range at 50%", zones:[{x0:12,x1:88,p0:50,p1:92,c:"dn",op:0.12,label:"premium — sell"},{x0:12,x1:88,p0:8,p1:50,c:"up",op:0.12,label:"discount — buy"}],
+    refs:[{p:50,c:"br",label:"equilibrium",solid:true}] },
+  ote:{ cap:"enter the deep retracement", paths:[{pts:[[8,82],[34,16],[72,52]],c:"foc",w:2}],
+    zones:[{x0:44,x1:80,p0:42,p1:60,c:"up",op:0.18,label:"OTE 62–79%"}] },
+  liqgrab:{ cap:"spike past the level, then reverse", paths:[{pts:[[6,50],[30,54],[46,86],[52,80],[70,40],[92,34]],c:"foc",w:1.8}],
+    refs:[{p:78,c:"n",label:"prior high (stops)"}], dots:[{x:46,p:86,label:"grab",c:"dn",dy:-5}] },
+  fvg:{ cap:"fast move leaves a 3-candle gap", paths:[{pts:[[8,40],[30,42],[46,40],[62,74],[86,86]],c:"up",w:2.4}],
+    zones:[{x0:50,x1:70,p0:44,p1:66,c:"up",op:0.18,label:"FVG"}] },
+  orderblock:{ cap:"last down candle before the move", zones:[{x0:20,x1:34,p0:30,p1:48,c:"dn",op:0.22,label:"OB"}],
+    paths:[{pts:[[8,42],[27,36],[46,52],[66,72],[88,86]],c:"up",w:2}] },
+  displacement:{ cap:"strong one-sided move = intent", paths:[{pts:[[8,40],[28,42],[44,40],[60,72],[88,88]],c:"up",w:2.6}] },
+  // ---- FTFC / environment ----
+  broadening:{ cap:"timeframes disagree → range expands", paths:[{pts:[[8,50],[92,84],],c:"n",w:1,dash:true},{pts:[[8,50],[92,16]],c:"n",w:1,dash:true},{pts:[[8,50],[28,60],[48,42],[68,70],[88,30]],c:"foc",w:1.8}] },
+  alignment:{ cap:"every timeframe agrees", tags:[{x:16,p:50,label:"▲",c:"up"},{x:38,p:50,label:"▲",c:"up"},{x:60,p:50,label:"▲",c:"up"},{x:82,p:50,label:"▲",c:"up"}],
+    refs:[{p:74,c:"n",label:"D · W · M · Q all up"}] },
+  // ---- Greeks ----
+  delta:{ cap:"option value vs the stock price", paths:[{pts:[[8,14],[26,18],[40,30],[50,50],[60,70],[74,82],[92,86]],c:"foc",w:2}], vlines:[{x:50,c:"n",label:"ATM"}] },
+  gamma:{ cap:"delta changes fastest at the money", paths:[{pts:[[8,14],[22,20],[33,36],[43,66],[50,82],[57,66],[67,36],[78,20],[92,14]],c:"foc",w:2}], vlines:[{x:50,c:"n",label:"ATM"}] },
+  theta:{ cap:"time decay accelerates into expiry", paths:[{pts:[[8,82],[26,76],[44,64],[60,50],[74,32],[85,16],[92,8]],c:"dn",w:2}], tags:[{x:92,p:16,label:"expiry",c:"dn",anchor:"end"}] },
+  vega:{ cap:"value rises with implied volatility", paths:[{pts:[[8,18],[92,82]],c:"foc",w:2}], tags:[{x:10,p:10,label:"low IV",c:"n",anchor:"start"},{x:90,p:90,label:"high IV",c:"n",anchor:"end"}] },
+  // ---- options risk ----
+  ivcrush:{ cap:"IV inflates into the event, then crushes", paths:[{pts:[[8,38],[28,50],[46,66],[58,74],[62,74],[66,40],[80,32],[92,30]],c:"foc",w:2}], vlines:[{x:62,c:"dn",label:"event"}] },
+  expectedmove:{ cap:"the move already priced in", zones:[{x0:8,x1:92,p0:38,p1:62,c:"foc",op:0.14,label:"expected move"}], refs:[{p:50,c:"br",label:"price",solid:true}] },
+  stddev:{ cap:"±1σ ≈ 68% · ±2σ ≈ 95%", paths:[{pts:[[8,14],[22,20],[33,36],[43,66],[50,82],[57,66],[67,36],[78,20],[92,14]],c:"foc",w:2}], vlines:[{x:33,c:"n",label:"−1σ"},{x:67,c:"n",label:"+1σ"},{x:19,c:"n",label:"−2σ"},{x:81,c:"n",label:"+2σ"}] },
+  moneyness:{ cap:"call · stock above strike = ITM", zones:[{x0:50,x1:92,p0:44,p1:58,c:"up",op:0.14,label:"ITM"},{x0:8,x1:50,p0:44,p1:58,c:"n",op:0.10,label:"OTM"}], vlines:[{x:50,c:"br",label:"strike"}] },
+  extrinsic:{ cap:"theta & IV crush eat the extrinsic", zones:[{x0:40,x1:60,p0:8,p1:40,c:"n",op:0.5,label:"intrinsic"},{x0:40,x1:60,p0:40,p1:80,c:"br",op:0.32,label:"extrinsic"}] },
+  // ---- pivots / MAs / trend tools ----
+  pivots:{ cap:"pivot + support / resistance ladder", refs:[{p:88,c:"dn",label:"R3"},{p:75,c:"dn",label:"R2"},{p:62,c:"dn",label:"R1"},{p:50,c:"br",label:"PP",solid:true},{p:38,c:"up",label:"S1"},{p:25,c:"up",label:"S2"},{p:12,c:"up",label:"S3"}] },
+  ema:{ cap:"price above a rising average = uptrend", paths:[{pts:[[6,26],[20,44],[32,34],[46,58],[60,48],[74,72],[88,64]],c:"foc",w:1.7},{pts:[[6,22],[26,32],[46,42],[66,54],[88,62]],c:"br",w:2}],
+    tags:[{x:88,p:72,label:"price",c:"foc",anchor:"end"},{x:88,p:54,label:"EMA",c:"br",anchor:"end"}] },
+  vwap:{ cap:"the day's volume-weighted fair value", paths:[{pts:[[6,50],[18,64],[30,44],[42,60],[54,46],[66,62],[78,48],[90,60]],c:"foc",w:1.7},{pts:[[6,50],[90,54]],c:"br",w:2}], tags:[{x:90,p:46,label:"VWAP",c:"br",anchor:"end"}] },
+  orb:{ cap:"break of the first 15–30 min range", zones:[{x0:8,x1:30,p0:38,p1:62,c:"n",op:0.16,label:"OR"}], paths:[{pts:[[8,50],[30,58],[46,66],[64,78],[86,88]],c:"up",w:2}], refs:[{p:62,c:"br",label:"range high"}] },
+  sr:{ cap:"price stalls at support & resistance", refs:[{p:72,c:"dn",label:"resistance"},{p:30,c:"up",label:"support"}], paths:[{pts:[[6,34],[22,68],[40,34],[58,70],[76,34],[92,60]],c:"foc",w:1.7}] },
+  trend:{ cap:"an up-trend rides a rising channel", paths:[{pts:[[6,26],[92,86]],c:"n",w:1,dash:true},{pts:[[6,8],[92,68]],c:"n",w:1,dash:true},{pts:[[6,16],[24,32],[40,24],[56,46],[72,38],[92,74]],c:"up",w:2}] },
+  // ---- money management ----
+  sizeoffstop:{ cap:"size = $ risked ÷ (entry − stop)", refs:[{p:64,c:"up",label:"entry",solid:true},{p:44,c:"dn",label:"stop",solid:true}], arrows:[{x1:24,p1:64,x2:24,p2:44,c:"br"}], tags:[{x:30,p:54,label:"risk",c:"br",anchor:"start"}] },
+  rmultiple:{ cap:"reward measured in units of risk", zones:[{x0:22,x1:40,p0:36,p1:50,c:"dn",op:0.42,label:""},{x0:58,x1:76,p0:36,p1:86,c:"up",op:0.42,label:""}], tags:[{x:31,p:28,label:"1R risk",c:"dn"},{x:67,p:28,label:"3R reward",c:"up"}] },
+  scaleout:{ cap:"bank pieces into strength", paths:[{pts:[[8,30],[30,44],[50,58],[70,72],[90,84]],c:"up",w:2}], dots:[{x:50,p:58,label:"T1",c:"br",dy:-5},{x:70,p:72,label:"T2",c:"br",dy:-5},{x:90,p:84,label:"T3",c:"br",dy:-5,anchor:"end"}] },
+  // ---- futures ----
+  gap:{ cap:"an overnight gap jumps the open", refs:[{p:46,c:"n",label:"prior close"}], zones:[{x0:42,x1:60,p0:46,p1:64,c:"br",op:0.16,label:"gap"}], paths:[{pts:[[10,40],[30,46]],c:"n",w:2},{pts:[[60,64],[86,84]],c:"up",w:2}] },
+};
+function PathDia({d}){
+  const W=280,H=124,padL=14,padR=14,axT=14,axB=100;
+  const X=x=>padL+(x/100)*(W-padL-padR), Y=p=>axB-(p/100)*(axB-axT);
+  const UP="#3FB782",DN="#E76A5B",NEUT="#8792A0",BR="#E3A857",FOC="#6FA8DC",L="#333D49";
+  const col=c=>({up:UP,dn:DN,n:NEUT,br:BR,foc:FOC}[c]||c||NEUT);
+  const box={maxWidth:300,marginTop:10,background:"#0E1116",border:"1px solid "+L,borderRadius:8};
+  const poly=a=>a.map(([x,p])=>`${X(x)},${Y(p)}`).join(" ");
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={box} role="img" aria-label="concept diagram">
+      {(d.zones||[]).map((z,i)=>(<g key={"z"+i}>
+        <rect x={X(z.x0)} y={Y(z.p1)} width={X(z.x1)-X(z.x0)} height={Y(z.p0)-Y(z.p1)} fill={col(z.c)} opacity={z.op==null?0.14:z.op} rx="3"/>
+        {z.label && <text x={(X(z.x0)+X(z.x1))/2} y={(Y(z.p0)+Y(z.p1))/2+3} fill={col(z.c)} fontSize="9" fontFamily="'JetBrains Mono',monospace" fontWeight="700" textAnchor="middle">{z.label}</text>}
+      </g>))}
+      {(d.vlines||[]).map((v,i)=>(<g key={"v"+i}>
+        <line x1={X(v.x)} x2={X(v.x)} y1={Y(0)} y2={Y(94)} stroke={col(v.c||"n")} strokeWidth="1" strokeDasharray="3 3" opacity="0.7"/>
+        {v.label && <text x={X(v.x)} y={Y(97)} fill={col(v.c||"n")} fontSize="8" fontFamily="'JetBrains Mono',monospace" fontWeight="700" textAnchor="middle">{v.label}</text>}
+      </g>))}
+      {(d.refs||[]).map((r,i)=>(<g key={"r"+i}>
+        <line x1={X(0)} x2={X(100)} y1={Y(r.p)} y2={Y(r.p)} stroke={col(r.c||"br")} strokeWidth="1" strokeDasharray={r.solid?"none":"4 3"} opacity="0.85"/>
+        {r.label && <text x={X(100)} y={Y(r.p)-3} fill={col(r.c||"br")} fontSize="8.5" fontFamily="'JetBrains Mono',monospace" fontWeight="700" textAnchor="end">{r.label}</text>}
+      </g>))}
+      {(d.paths||[]).map((pth,i)=>(<polyline key={"p"+i} points={poly(pth.pts)} fill="none" stroke={col(pth.c||"foc")} strokeWidth={pth.w||2} strokeDasharray={pth.dash?"4 3":"none"} strokeLinejoin="round" strokeLinecap="round"/>))}
+      {(d.arrows||[]).map((a,i)=>(<line key={"a"+i} x1={X(a.x1)} y1={Y(a.p1)} x2={X(a.x2)} y2={Y(a.p2)} stroke={col(a.c||"br")} strokeWidth={a.w||1.5} markerEnd=""/>))}
+      {(d.dots||[]).map((dt,i)=>(<g key={"d"+i}>
+        <circle cx={X(dt.x)} cy={Y(dt.p)} r={dt.r||3} fill={col(dt.c||"br")}/>
+        {dt.label && <text x={X(dt.x)+(dt.anchor==="end"?-5:5)} y={Y(dt.p)+(dt.dy==null?-5:dt.dy)} fill={col(dt.c||"br")} fontSize="8.5" fontFamily="'JetBrains Mono',monospace" fontWeight="700" textAnchor={dt.anchor||"start"}>{dt.label}</text>}
+      </g>))}
+      {(d.tags||[]).map((t,i)=>(<text key={"t"+i} x={X(t.x)} y={Y(t.p)} fill={col(t.c||"n")} fontSize={t.big?"15":"9"} fontFamily="'JetBrains Mono',monospace" fontWeight="700" textAnchor={t.anchor||"middle"}>{t.label}</text>))}
+      {d.cap && <text x={X(0)} y={10} fill={BR} fontSize="9.5" fontFamily="'JetBrains Mono',monospace" fontWeight="700" textAnchor="start">{d.cap}</text>}
+    </svg>);
+}
 function StratDia({kind}){
+  if(LINES[kind]) return <PathDia d={LINES[kind]}/>;
   const W=280,H=120,yTop=12,yBot=100;
   const Y=p=>yBot-(p/100)*(yBot-yTop);
   const cw=15, UP="#3FB782", DN="#E76A5B", NEUT="#8792A0", BR="#E3A857", L="#333D49";
@@ -5243,6 +5340,182 @@ function StratDia({kind}){
         </g>)); })()}
       {D.bars.map(bar)}
     </svg>);
+}
+/* ---------- Test / quiz engine — built from the glossary, graded, tracked ---------- */
+const stripHtml=s=>String(s||"").replace(/<[^>]+>/g," ").replace(/\s+/g," ").trim();
+const TEST_TIER={ "Bar types":1,"Triggers & pivots":1,"Your risk system":1,"Money management":1,"Journal metrics":1,
+  "Actionable signals":2,"Strat continuity scans":2,"FTFC & structure":2,"Market structure":2,"Reading volume":2,"Options pricing & execution":2,
+  "Market-maker models · ICT":3,"Options Greeks":3,"Options risk & terms":3,"Pivot indicators & horizon":3,"Futures & the open":3,"Moving averages, VWAP & trend tools":3 };
+const TEST_LEVELS=[
+  {id:1,name:"Basics",blurb:"Start here — bar types, triggers, stops, your risk system. The first things you need to know."},
+  {id:2,name:"Signals & structure",blurb:"Setups, FTFC, market structure, volume — reading the environment."},
+  {id:3,name:"ICT, Greeks & options",blurb:"The advanced layer — market-maker models, the Greeks, and premium risk."},
+  {id:0,name:"Everything",blurb:"A full mix across every topic in the glossary."},
+];
+function testBank(level){
+  const all=[];
+  GLOSSARY.forEach(g=>g.items.forEach(it=>all.push({term:it.term,def:stripHtml(it.def),cat:g.cat,dia:it.dia,tier:TEST_TIER[g.cat]||2})));
+  return level?all.filter(x=>x.tier===level):all;
+}
+function tShuffle(a){ const r=a.slice(); for(let i=r.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); const t=r[i]; r[i]=r[j]; r[j]=t; } return r; }
+function makeQuestions(level,n){
+  const pool=testBank(level), allT=testBank(0);
+  return tShuffle(pool).slice(0,n).map(t=>{
+    let d=tShuffle(allT.filter(x=>x.cat===t.cat&&x.term!==t.term)).slice(0,3).map(x=>x.term);
+    if(d.length<3) d=d.concat(tShuffle(allT.filter(x=>x.term!==t.term&&!d.includes(x.term))).slice(0,3-d.length).map(x=>x.term));
+    return {prompt:t.def, answer:t.term, options:tShuffle([t.term,...d.slice(0,3)]), cat:t.cat, dia:t.dia};
+  });
+}
+function testGrade(p){ return p>=90?["A","var(--bull)"]:p>=80?["B","var(--bull)"]:p>=70?["C","var(--brass)"]:p>=60?["D","var(--brass)"]:["F","var(--bear)"]; }
+function TestZone(){
+  const [view,setView]=useState("home");            // home | quiz | result | progress
+  const [level,setLevel]=useState(null);
+  const [qs,setQs]=useState([]);
+  const [i,setI]=useState(0);
+  const [picked,setPicked]=useState(null);
+  const [answers,setAnswers]=useState([]);           // aligned to qs: {correct,term,cat,dia,picked,prompt}
+  const [hist,setHist]=useState([]);
+  const [saved,setSaved]=useState(false);
+  useEffect(()=>{ (async()=>{ const h=await sGet("test:history"); if(Array.isArray(h)) setHist(h); })(); },[]);
+
+  function start(lv){ setLevel(lv); setQs(makeQuestions(lv.id,10)); setI(0); setPicked(null); setAnswers([]); setSaved(false); setView("quiz"); }
+  function choose(opt){ if(picked!=null) return; const q=qs[i]; setPicked(opt); setAnswers(a=>{ const c=a.slice(); c[i]={correct:opt===q.answer,term:q.answer,cat:q.cat,dia:q.dia,picked:opt,prompt:q.prompt}; return c; }); }
+  function next(){ if(i+1<qs.length){ setI(i+1); setPicked(null); } else setView("result"); }
+  useEffect(()=>{ (async()=>{
+    if(view!=="result"||saved) return;
+    setSaved(true);
+    const score=answers.filter(a=>a&&a.correct).length, total=qs.length;
+    const weak=(await sGet("test:weak"))||{}, mastered=(await sGet("test:mastered"))||{};
+    answers.forEach(a=>{ if(!a) return; if(a.correct) mastered[a.term]=(mastered[a.term]||0)+1; else weak[a.term]=(weak[a.term]||0)+1; });
+    await sSet("test:weak",weak); await sSet("test:mastered",mastered);
+    const attempt={ts:Date.now(),level:level?level.name:"—",score,total,pct:Math.round(score/total*100),missed:answers.filter(a=>a&&!a.correct).map(a=>a.term)};
+    const nh=[attempt,...hist].slice(0,50); setHist(nh); await sSet("test:history",nh);
+  })(); },[view]);
+
+  const score=answers.filter(a=>a&&a.correct).length;
+  const best=hist.reduce((m,a)=>Math.max(m,a.pct),0);
+  const btn={border:"1px solid var(--line2)",background:"var(--bg)",color:"var(--bone)",borderRadius:10,padding:"13px 15px",fontSize:15,cursor:"pointer",textAlign:"left",fontFamily:"inherit",width:"100%"};
+
+  // ---- HOME ----
+  if(view==="home") return (
+    <div>
+      <div className="card" style={{padding:20,marginBottom:16}}>
+        <div className="eyebrow" style={{marginBottom:5}}>Test yourself</div>
+        <div className="disp" style={{fontSize:25,fontWeight:800,marginBottom:8}}>Do you actually know it?</div>
+        <div style={{fontSize:14,color:"var(--dim)",lineHeight:1.65}}>Ten questions pulled from the glossary. Start with the <b style={{color:"var(--bone)"}}>Basics</b> and work up. Every answer shows you the concept (with its diagram), it grades you at the end, and it remembers what you miss so you can review the weak spots.</div>
+        {hist.length>0 && <div className="mono" style={{fontSize:12.5,color:"var(--faint)",marginTop:12}}>Best score: <b style={{color:testGrade(best)[1]}}>{best}%</b> · {hist.length} test{hist.length===1?"":"s"} taken · <span onClick={()=>setView("progress")} style={{color:"var(--brass)",cursor:"pointer",textDecoration:"underline"}}>see progress →</span></div>}
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(230px,1fr))",gap:12}}>
+        {TEST_LEVELS.map(lv=>(
+          <button key={lv.id} onClick={()=>start(lv)} style={btn} onMouseEnter={e=>e.currentTarget.style.borderColor="var(--brass)"} onMouseLeave={e=>e.currentTarget.style.borderColor="var(--line2)"}>
+            <div className="disp" style={{fontSize:17,fontWeight:800,color:"var(--brass)",marginBottom:5}}>{lv.id===1?"① ":lv.id===2?"② ":lv.id===3?"③ ":"★ "}{lv.name}</div>
+            <div style={{fontSize:13,color:"var(--dim)",lineHeight:1.5}}>{lv.blurb}</div>
+          </button>))}
+      </div>
+    </div>
+  );
+
+  // ---- QUIZ ----
+  if(view==="quiz"){
+    const q=qs[i]; if(!q) return null;
+    return (
+      <div>
+        <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14}}>
+          <button className="btn" onClick={()=>setView("home")} style={{padding:"6px 12px",fontSize:12.5}}>← Quit</button>
+          <span className="eyebrow">{level&&level.name} · Q{i+1} of {qs.length}</span>
+          <span className="mono" style={{marginLeft:"auto",fontSize:13,color:"var(--brass)"}}>Score {score}/{answers.filter(Boolean).length}</span>
+        </div>
+        <div style={{height:5,background:"var(--bg3)",borderRadius:3,marginBottom:16,overflow:"hidden"}}><div style={{height:"100%",width:`${(i/qs.length)*100}%`,background:"var(--brass)"}}/></div>
+        <div className="card" style={{padding:20,marginBottom:14}}>
+          <div className="eyebrow" style={{marginBottom:8}}>Which term is this?</div>
+          <div style={{fontSize:16.5,color:"var(--bone)",lineHeight:1.55,fontWeight:500}}>{q.prompt}</div>
+        </div>
+        <div style={{display:"flex",flexDirection:"column",gap:9}}>
+          {q.options.map((opt,k)=>{
+            const isAns=opt===q.answer, isPicked=opt===picked, show=picked!=null;
+            const bc=show&&isAns?"var(--bull)":show&&isPicked&&!isAns?"var(--bear)":"var(--line2)";
+            const bg=show&&isAns?"rgba(63,183,130,0.10)":show&&isPicked&&!isAns?"rgba(231,106,91,0.10)":"var(--bg)";
+            return (
+              <button key={k} onClick={()=>choose(opt)} disabled={show} style={{...btn,borderColor:bc,background:bg,cursor:show?"default":"pointer",display:"flex",alignItems:"center",gap:10}}>
+                <span className="mono" style={{fontSize:12,color:"var(--faint)",flexShrink:0}}>{String.fromCharCode(65+k)}</span>
+                <span style={{fontSize:15,fontWeight:600,color:show&&isAns?"var(--bull)":"var(--bone)"}}>{opt}</span>
+                {show&&isAns && <span style={{marginLeft:"auto",color:"var(--bull)"}}>✓</span>}
+                {show&&isPicked&&!isAns && <span style={{marginLeft:"auto",color:"var(--bear)"}}>✗</span>}
+              </button>);
+          })}
+        </div>
+        {picked!=null && <div className="card" style={{padding:16,marginTop:14,borderColor:picked===q.answer?"var(--bull)":"var(--bear)"}}>
+          <div style={{fontSize:14,fontWeight:700,color:picked===q.answer?"var(--bull)":"var(--bear)",marginBottom:6}}>{picked===q.answer?"Correct":`Not quite — it's ${q.answer}`}</div>
+          <div style={{fontSize:14,color:"var(--dim)",lineHeight:1.55}}>{q.prompt}</div>
+          {q.dia && <StratDia kind={q.dia}/>}
+          <button className="btn btn-primary" onClick={next} style={{marginTop:13,padding:"9px 16px"}}>{i+1<qs.length?"Next question →":"See my score →"}</button>
+        </div>}
+      </div>
+    );
+  }
+
+  // ---- RESULT ----
+  if(view==="result"){
+    const total=qs.length, pct=Math.round(score/total*100), [gr,gc]=testGrade(pct);
+    const missed=answers.filter(a=>a&&!a.correct);
+    return (
+      <div>
+        <div className="card" style={{padding:24,marginBottom:16,textAlign:"center"}}>
+          <div className="eyebrow" style={{marginBottom:6}}>{level&&level.name} · complete</div>
+          <div className="mono" style={{fontSize:60,fontWeight:800,lineHeight:1,color:gc}}>{gr}</div>
+          <div className="mono" style={{fontSize:20,fontWeight:800,marginTop:6}}>{score}/{total} · {pct}%</div>
+          <div style={{fontSize:14,color:"var(--dim)",marginTop:8}}>{pct>=80?"Sharp. You know this cold.":pct>=60?"Solid base — tighten the misses below.":"Worth another pass. Review the terms below, then retake."}</div>
+          <div style={{display:"flex",gap:9,justifyContent:"center",marginTop:16,flexWrap:"wrap"}}>
+            <button className="btn btn-primary" onClick={()=>start(level)} style={{padding:"9px 16px"}}>↻ Retake</button>
+            <button className="btn" onClick={()=>setView("home")} style={{padding:"9px 16px"}}>Pick another level</button>
+            <button className="btn" onClick={()=>setView("progress")} style={{padding:"9px 16px"}}>My progress →</button>
+          </div>
+        </div>
+        {missed.length>0 && <div className="card" style={{padding:18}}>
+          <div className="eyebrow" style={{marginBottom:4}}>What to review</div>
+          <div style={{fontSize:13.5,color:"var(--dim)",marginBottom:12}}>The {missed.length} you missed — study these, then retake.</div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))",gap:14}}>
+            {missed.map((a,k)=>(
+              <div key={k} style={{padding:13,background:"var(--bg)",border:"1px solid var(--line)",borderRadius:11}}>
+                <div className="disp" style={{fontSize:15.5,fontWeight:700,color:"var(--brass)",marginBottom:5}}>{a.term}</div>
+                <div style={{fontSize:13.5,color:"var(--comp)",lineHeight:1.5}}>{a.prompt}</div>
+                {a.dia && <StratDia kind={a.dia}/>}
+              </div>))}
+          </div>
+        </div>}
+        {missed.length===0 && <div className="card" style={{padding:20,textAlign:"center",fontSize:15,color:"var(--bull)"}}>Perfect run — nothing to review. 🎯</div>}
+      </div>
+    );
+  }
+
+  // ---- PROGRESS ----
+  const weakList=[];
+  return (
+    <div>
+      <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:16}}>
+        <button className="btn" onClick={()=>setView("home")} style={{padding:"6px 12px",fontSize:12.5}}>← Back</button>
+        <div className="disp" style={{fontSize:22,fontWeight:800}}>Your progress</div>
+      </div>
+      {hist.length===0
+        ? <div className="card" style={{padding:20,color:"var(--dim)",fontSize:14}}>No tests taken yet. Run one from the levels screen and your scores land here.</div>
+        : (<>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(120px,1fr))",gap:10,marginBottom:16}}>
+            {[["Tests taken",hist.length,"var(--bone)"],["Best score",best+"%",testGrade(best)[1]],["Last score",hist[0].pct+"%",testGrade(hist[0].pct)[1]],["Avg score",Math.round(hist.reduce((s,a)=>s+a.pct,0)/hist.length)+"%","var(--brass)"]].map(([l,v,c],k)=>(
+              <div key={k} className="card" style={{padding:13}}><div className="eyebrow" style={{fontSize:10,marginBottom:4}}>{l}</div><div className="mono" style={{fontSize:22,fontWeight:800,color:c,lineHeight:1.1}}>{v}</div></div>))}
+          </div>
+          <div className="card" style={{padding:16}}>
+            <div className="eyebrow" style={{marginBottom:11}}>Recent tests</div>
+            {hist.slice(0,12).map((a,k)=>(
+              <div key={k} style={{display:"flex",alignItems:"center",gap:12,padding:"8px 0",borderBottom:"1px solid var(--line)",flexWrap:"wrap"}}>
+                <span className="mono" style={{fontSize:13.5,fontWeight:800,color:testGrade(a.pct)[1],minWidth:34}}>{testGrade(a.pct)[0]}</span>
+                <span style={{fontSize:13.5,fontWeight:600,color:"var(--bone)",flex:"1 1 120px"}}>{a.level}</span>
+                <span className="mono" style={{fontSize:13,color:"var(--dim)"}}>{a.score}/{a.total} · {a.pct}%</span>
+                <span className="mono" style={{fontSize:12,color:"var(--faint)"}}>{new Date(a.ts).toLocaleDateString([],{month:"short",day:"numeric"})}</span>
+              </div>))}
+          </div>
+        </>)}
+    </div>
+  );
 }
 function GlossaryView(){
   return (
