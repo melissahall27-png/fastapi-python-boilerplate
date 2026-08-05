@@ -5653,6 +5653,7 @@ const GLOSSARY=[
     {term:"Expansion",def:"Volume rising into a move — it CONFIRMS the break. A breakout on above-average volume is far more trustworthy."},
     {term:"Contraction",def:"Volume drying up — it WARNS the move is weak or just coiling. A breakout on light volume often fails."},
     {term:"Climax",def:"A huge volume spike at an extreme — often EXHAUSTION, the last push before a reversal, not a reason to chase."},
+    {term:"Exhaustion",dia:"exhaustion",def:"The move's <b>last gasp</b>. After a strong run, price makes one final over-extended push — usually an outsized candle with a <b>long wick</b> into a new high/low on a <b>volume spike</b> — then immediately reverses. The trend has run out of fuel, and whoever chased that last push is the trapped side. It's a reversal tell, <b>not a breakout to chase</b>. Exhaustion into a swept high/low that fails, then reclaims, is the highest-odds turn — the trap and the reversal in one."},
   ]},
   {cat:"Your risk system",sub:"The vocabulary of the Examine calculator",items:[
     {term:"Invalidation",def:"The underlying price where the trade is simply WRONG (e.g. it reclaims the level you shorted). Structure sets the stop, not a flat %."},
@@ -5736,6 +5737,8 @@ const LINES={
   sweepreclaim:{ cap:"sweep the lows, reclaim, then run", paths:[{pts:[[6,66],[20,50],[34,44],[46,24],[54,42],[70,60],[92,82]],c:"up",w:2}],
     refs:[{p:44,c:"n",label:"swing low (obvious stops)"},{p:26,c:"up",label:"your stop → under the wick"}],
     dots:[{x:46,p:24,label:"sweep & reclaim",c:"up",dy:9}] },
+  exhaustion:{ cap:"climax spike on huge volume, then it turns", paths:[{pts:[[6,30],[20,44],[34,54],[48,64],[62,76],[72,90],[80,78],[92,42]],c:"foc",w:1.9}],
+    dots:[{x:72,p:90,label:"exhaustion",c:"dn",dy:-4}] },
   fvg:{ cap:"fast move leaves a 3-candle gap", paths:[{pts:[[8,40],[30,42],[46,40],[62,74],[86,86]],c:"up",w:2.4}],
     zones:[{x0:50,x1:70,p0:44,p1:66,c:"up",op:0.18,label:"FVG"}] },
   orderblock:{ cap:"last down candle before the move", zones:[{x0:20,x1:34,p0:30,p1:48,c:"dn",op:0.22,label:"OB"}],
