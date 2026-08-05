@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 
 /* ============================================================
    TRADING COMMAND CENTER
@@ -455,7 +455,7 @@ export default function TradingCommandCenter(){
   useEffect(()=>{ if(loaded) sSet("watchlist:tickers",watch); },[watch,loaded]);
   useEffect(()=>{ if(loaded && Object.keys(quotes).length) sSet("quotes:last",quotes); },[quotes,loaded]);
 
-  const TABS=[["guide","Guide"],["today","Today"],["dash","Dashboard"],["journal","Journal"],["review","Review"],["watch","Watchlist"],["strat","Strat"],["runner","Runner"],["sectors","Sectors"],["tools","Tools"],["news","News"],["play","Playbook"],["tutor","Tutor"]];
+  const TABS=[["guide","Guide"],["today","Today"],["dash","Dashboard"],["journal","Journal"],["review","Review"],["watch","Watchlist"],["strat","Strat"],["runner","Runner"],["scans","Scans"],["sectors","Sectors"],["tools","Tools"],["news","News"],["play","Playbook"],["tutor","Tutor"]];
 
   return (
     <HelpCtx.Provider value={showHelp}>
@@ -504,6 +504,7 @@ export default function TradingCommandCenter(){
         {tab==="watch" && <Watchlist watch={watch} setWatch={setWatch} quotes={quotes} setQuotes={setQuotes} />}
         {tab==="strat" && <StratScanner watch={watch} />}
         {tab==="runner" && <RunnerScan watch={watch} />}
+        {tab==="scans" && <ScanJournal trades={trades} />}
         {tab==="sectors" && <Sectors quotes={quotes} setQuotes={setQuotes} />}
         {tab==="tools" && <Tools watch={watch} setWatch={setWatch} />}
         {tab==="news" && <News watch={watch} />}
@@ -1457,7 +1458,7 @@ function Goals({trades,setTrades,watch}){
       const sys=await withKB(MENTOR_SYS+`\n\nTASK — Find PLAYS sized to MY ACCOUNT. Account: ${fmtMoney(acctB)}. I risk ${num(riskPct)||4}% = ~${fmtMoney(acctRisk)} per trade, targeting 1:${rrN} (~${fmtMoney(acctWin)} per winner).${tAmtE!=null?` Goal: ${fmtMoney(tAmtE)} over the ${PNOUN}.`:""} Scan my watchlist for CURRENT setups (Strat continuity/patterns, at a level, real trigger potential) I can actually AFFORD and that risk about ${fmtMoney(acctRisk)} to the stop — pick strikes whose per-contract risk and cost fit this account, and say how many contracts. Search current structure; latest candle may be forming (pending). Return ONLY a JSON array, no prose/fences: [{"sym":"IWM","dir":"Short","why":"the setup in ≤16 words","strike":"289 Put","contracts":"e.g. 1-2","delta":"~0.58","dte":"3–5 DTE","risk":"~$ total to the stop (fits ${fmtMoney(acctRisk)})","target":"~$ if 1:${rrN} hits"}]. Keep it TIGHT: return the 3 best only, short fields, so the full JSON fits. Estimates — I confirm on chart/chain.`);
       const res=await callClaude({ maxTokens:1000, tools:[{type:"web_search_20250305",name:"web_search"}], system:sys, messages:[{role:"user",content:`Find plays my ${fmtMoney(acctB)} account can afford, risking ~${fmtMoney(acctRisk)} each. Watchlist: ${syms.join(", ")}. Today ${todayISO()}.`}] });
       let j=extractJson(getText(res)); if(!Array.isArray(j)||!j.length) j=extractObjs(getText(res));
-      if(Array.isArray(j)&&j.length){ setAPlays(j.filter(p=>p&&p.sym)); setATime(Date.now()); } else setAErr("Couldn't find plays — try again.");
+      if(Array.isArray(j)&&j.length){ const ap=j.filter(p=>p&&p.sym); setAPlays(ap); setATime(Date.now()); logScan("Account plays", ap.map(p=>p.sym), ap.slice(0,5).map(p=>({s:p.sym,note:String(p.why||p.dir||"").slice(0,40)}))); } else setAErr("Couldn't find plays — try again.");
     }catch(e){ setAErr(aiErr(e,"Scan")); }
     setALoad(false);
   }
@@ -1471,7 +1472,7 @@ function Goals({trades,setTrades,watch}){
       const sys=await withKB(MENTOR_SYS+`\n\nTASK — Find PLAYS to hit my profit goal. Goal: ${fmtMoney(tAmtE)} over the ${PNOUN}. Plan: about ${totalTrades} quality trades total, needing ~${fmtMoney(profitPerTrade)} average profit per trade at 1:${rrN}. Reference (50% win rate): risk ~${r50&&r50.risk!=null?fmtMoney(r50.risk):"?"} to make ~${r50&&r50.avgWin!=null?fmtMoney(r50.avgWin):"?"} per trade. Scan my watchlist for CURRENT setups (Strat continuity/patterns, at a level, real trigger potential) that can realistically deliver about 1:${rrN} at roughly that size, and give the exact contract to trade each. Search current structure; the latest candle may be forming (pending). Return ONLY a JSON array, no prose/fences: [{"sym":"IWM","dir":"Short","why":"the setup in ≤16 words","strike":"289 Put","delta":"~0.58","dte":"3–5 DTE","risk":"~$ per contract to the stop","target":"~$ if 1:${rrN} hits"}]. Keep it TIGHT: return the 3 best only, short fields, so the full JSON fits. Estimates — I confirm on chart/chain.`);
       const res=await callClaude({ maxTokens:1000, tools:[{type:"web_search_20250305",name:"web_search"}], system:sys, messages:[{role:"user",content:`Find 3–6 plays on my watchlist that fit this goal. Watchlist: ${syms.join(", ")}. Today is ${todayISO()}.`}] });
       let j=extractJson(getText(res)); if(!Array.isArray(j)||!j.length) j=extractObjs(getText(res));
-      if(Array.isArray(j)&&j.length){ setPlays(j.filter(p=>p&&p.sym)); setPTime(Date.now()); } else setPErr("Couldn't find plays — try again.");
+      if(Array.isArray(j)&&j.length){ const pp=j.filter(p=>p&&p.sym); setPlays(pp); setPTime(Date.now()); logScan("Goal plays", pp.map(p=>p.sym), pp.slice(0,5).map(p=>({s:p.sym,note:String(p.why||p.dir||"").slice(0,40)}))); } else setPErr("Couldn't find plays — try again.");
     }catch(e){ setPErr(aiErr(e,"Scan")); }
     setPLoad(false);
   }
@@ -3167,6 +3168,120 @@ function ChartModal({row,onClose}){
   );
 }
 
+/* ---------- Scan journal: auto-logs every scan, matches the trades you took, scores each scanner ---------- */
+async function logScan(source, syms, top){
+  try{
+    const log = await sGet("scan:log") || [];
+    const entry = { id: Date.now()+"-"+Math.random().toString(36).slice(2,6), ts: Date.now(), date: todayISO(),
+      source, syms:(syms||[]).map(s=>String(s||"").toUpperCase()).filter(Boolean).slice(0,30), top:(top||[]).slice(0,6) };
+    await sSet("scan:log", [entry, ...(Array.isArray(log)?log:[])].slice(0,400));
+  }catch(e){}
+}
+function srcTone(s){ return s==="Runner"?"var(--brass)":s==="Bias scan"?"var(--focus)":(s==="Goal plays"||s==="Account plays")?"var(--bull)":"var(--comp)"; }
+function daysApart(a,b){ return Math.round((new Date(b)-new Date(a))/864e5); }
+function ScanJournal({trades}){
+  const [log,setLog]=useState(null);
+  const [openId,setOpenId]=useState(null);
+  const [srcFilter,setSrcFilter]=useState("all");
+  useEffect(()=>{ (async()=>{ const l=await sGet("scan:log"); setLog(Array.isArray(l)?l:[]); })(); },[]);
+  const tradesFor=(scan)=>(trades||[]).filter(t=>{
+    const tk=(t.ticker||"").toUpperCase(); if(!tk) return false;
+    if(!(scan.syms||[]).map(s=>String(s).toUpperCase()).includes(tk)) return false;
+    const gap=daysApart(scan.date,t.date); return gap>=0 && gap<=3;
+  });
+  const sources=useMemo(()=>[...new Set((log||[]).map(s=>s.source))],[log]);
+  const shown=(log||[]).filter(s=>srcFilter==="all"||s.source===srcFilter);
+  const stats=useMemo(()=>{
+    if(!log) return null;
+    const bySrc={}; let scansWithTrade=0; const seen=new Set();
+    for(const s of log){
+      const b=bySrc[s.source]||(bySrc[s.source]={scans:0,taken:0,wins:0,losses:0,pnl:0});
+      b.scans++;
+      const tl=tradesFor(s); if(tl.length) scansWithTrade++;
+      for(const t of tl){ const key=s.source+"|"+t.id; if(seen.has(key)) continue; seen.add(key);
+        const p=computePnl(t); if(p==null) continue; b.taken++; b.pnl+=p; if(p>0)b.wins++; else if(p<0)b.losses++; }
+    }
+    const totals=Object.values(bySrc).reduce((a,b)=>({scans:a.scans+b.scans,taken:a.taken+b.taken,wins:a.wins+b.wins,losses:a.losses+b.losses,pnl:a.pnl+b.pnl}),{scans:0,taken:0,wins:0,losses:0,pnl:0});
+    return {bySrc,totals,scansWithTrade};
+  },[log,trades]);
+  const rate=(w,l)=> (w+l>0)?Math.round(w/(w+l)*100):null;
+  async function clearLog(){ if(!confirm("Clear the whole scan log? Your trades stay untouched.")) return; await sSet("scan:log",[]); setLog([]); }
+  if(!log) return <div className="card" style={{padding:20,color:"var(--faint)",fontSize:14}}>Loading scan history…</div>;
+  return (
+    <div>
+      <div className="card" style={{padding:20,marginBottom:16}}>
+        <div className="eyebrow" style={{marginBottom:5}}>Scan journal</div>
+        <div className="disp" style={{fontSize:25,fontWeight:800,marginBottom:8}}>Which scanner actually pays</div>
+        <div style={{fontSize:14,color:"var(--dim)",lineHeight:1.65}}>Every scan you run — Runner, goal &amp; account plays, watchlist bias — is filed here automatically. When you log a trade in a ticker a scan surfaced (within 3 sessions), it's matched back, so you learn which tool produces your winners.</div>
+      </div>
+
+      {stats && stats.totals.scans>0 && (<>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(120px,1fr))",gap:10,marginBottom:14}}>
+          {[["Scans run",stats.totals.scans,"var(--bone)"],
+            ["Turned into trades",stats.totals.taken,"var(--brass)"],
+            ["Win rate", rate(stats.totals.wins,stats.totals.losses)!=null?rate(stats.totals.wins,stats.totals.losses)+"%":"—", rate(stats.totals.wins,stats.totals.losses)>=50?"var(--bull)":"var(--bear)"],
+            ["Net P&L", fmtMoney(stats.totals.pnl), stats.totals.pnl>=0?"var(--bull)":"var(--bear)"]
+          ].map(([l,v,tone],i)=>(
+            <div key={i} className="card" style={{padding:13}}>
+              <div className="eyebrow" style={{fontSize:10,marginBottom:4}}>{l}</div>
+              <div className="mono" style={{fontSize:22,fontWeight:800,color:tone,lineHeight:1.1}}>{v}</div>
+            </div>))}
+        </div>
+        <div className="card" style={{padding:16,marginBottom:16}}>
+          <div className="eyebrow" style={{marginBottom:11}}>By scanner</div>
+          {Object.entries(stats.bySrc).sort((a,b)=>b[1].scans-a[1].scans).map(([src,b])=>{ const r=rate(b.wins,b.losses); return (
+            <div key={src} style={{display:"flex",alignItems:"center",gap:12,padding:"9px 0",borderBottom:"1px solid var(--line)",flexWrap:"wrap"}}>
+              <div style={{flex:"1 1 110px",fontSize:13.5,fontWeight:700,color:srcTone(src)}}>{src}</div>
+              <div className="mono" style={{fontSize:12.5,color:"var(--faint)"}}>{b.scans} scans</div>
+              <div className="mono" style={{fontSize:12.5,color:"var(--dim)"}}>{b.taken} taken</div>
+              <div className="mono" style={{fontSize:13.5,fontWeight:700,color:r==null?"var(--faint)":r>=50?"var(--bull)":"var(--bear)"}}>{r==null?"—":r+"%"}</div>
+              <div className="mono" style={{fontSize:13.5,fontWeight:700,minWidth:64,textAlign:"right",color:b.pnl>=0?"var(--bull)":"var(--bear)"}}>{b.taken?fmtMoney(b.pnl):"—"}</div>
+            </div>);})}
+        </div>
+      </>)}
+
+      {log.length>0 && <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:12,alignItems:"center"}}>
+        <span className="eyebrow">Show</span>
+        {["all",...sources].map(s=>(
+          <button key={s} className="btn" onClick={()=>setSrcFilter(s)} style={{padding:"6px 12px",fontSize:12.5,borderColor:srcFilter===s?"var(--brass)":"var(--line2)",color:srcFilter===s?"var(--brass)":"var(--dim)"}}>{s==="all"?"All":s}</button>))}
+        <button className="btn" onClick={clearLog} style={{marginLeft:"auto",padding:"6px 12px",fontSize:12.5,color:"var(--faint)"}}>Clear log</button>
+      </div>}
+
+      {log.length===0 && <div className="card" style={{padding:20,fontSize:14,color:"var(--dim)"}}>No scans logged yet. Run a scan on the <b style={{color:"var(--bone)"}}>Runner</b>, <b style={{color:"var(--bone)"}}>Watchlist</b>, or <b style={{color:"var(--bone)"}}>Today</b> tab and it shows up here automatically.</div>}
+
+      <div style={{display:"flex",flexDirection:"column",gap:8}}>
+        {shown.map(s=>{ const tl=tradesFor(s); const open=openId===s.id; const pnl=tl.reduce((a,t)=>{const p=computePnl(t);return a+(p||0);},0); return (
+          <div key={s.id} className="card" style={{padding:14}}>
+            <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",cursor:"pointer"}} onClick={()=>setOpenId(open?null:s.id)}>
+              <span className="tag" style={{color:srcTone(s.source),borderColor:srcTone(s.source)}}>{s.source}</span>
+              <span className="mono" style={{fontSize:13,color:"var(--dim)"}}>{new Date(s.ts).toLocaleString()}</span>
+              <span className="mono" style={{fontSize:12.5,color:"var(--faint)"}}>{s.syms.length} ticker{s.syms.length===1?"":"s"}</span>
+              <span style={{marginLeft:"auto",display:"flex",gap:10,alignItems:"center"}}>
+                {tl.length>0
+                  ? <span className="mono" style={{fontSize:13,fontWeight:700,color:pnl>=0?"var(--bull)":"var(--bear)"}}>{tl.length} trade{tl.length===1?"":"s"} · {fmtMoney(pnl)}</span>
+                  : <span className="mono" style={{fontSize:12.5,color:"var(--faint)"}}>no trade yet</span>}
+                <span style={{color:"var(--faint)"}}>{open?"▲":"▼"}</span>
+              </span>
+            </div>
+            {open && <div style={{marginTop:12,paddingTop:12,borderTop:"1px solid var(--line)"}}>
+              <div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:tl.length?12:0}}>
+                {((s.top&&s.top.length)?s.top:(s.syms||[]).map(x=>({s:x}))).map((it,i)=>(
+                  <span key={i} className="mono" style={{fontSize:12.5,background:"var(--bg)",border:"1px solid var(--line2)",borderRadius:8,padding:"5px 10px"}}>
+                    <b style={{color:"var(--bone)"}}>{it.s}</b>{it.note?<span style={{color:"var(--faint)"}}> · {it.note}</span>:null}
+                  </span>))}
+              </div>
+              {tl.map(t=>{ const p=computePnl(t); return (
+                <div key={t.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 0",borderTop:"1px solid var(--line)"}}>
+                  <span className="mono" style={{fontSize:13}}><b>{t.ticker}</b> <span style={{color:"var(--dim)"}}>{t.direction} · {t.setup} · {t.date}</span></span>
+                  <span className="mono" style={{fontSize:13,fontWeight:700,color:(p||0)>=0?"var(--bull)":"var(--bear)"}}>{p!=null?fmtMoney(p):"open"}</span>
+                </div>);})}
+            </div>}
+          </div>);})}
+      </div>
+    </div>
+  );
+}
+
 function RunnerScan({watch}){
   const [rows,setRows]=useState(null);
   const [loading,setLoading]=useState(false);
@@ -3201,7 +3316,7 @@ dir="up"|"down". px=last close. atr=avg DAILY range in $ (~14d). comp/lvl/cat/fu
         if(Array.isArray(j)) all=all.concat(j.filter(x=>x&&x.s));
       }
       setProg("");
-      if(all.length){ all.sort((a,b)=>runnerScore(b)-runnerScore(a)); setRows(all); const t=Date.now(); setWhen(t); sSet("runner_scan",{rows:all,when:t}); }
+      if(all.length){ all.sort((a,b)=>runnerScore(b)-runnerScore(a)); setRows(all); const t=Date.now(); setWhen(t); sSet("runner_scan",{rows:all,when:t}); logScan("Runner", all.map(r=>r.s), all.slice(0,5).map(r=>({s:r.s,note:"score "+runnerScore(r)}))); }
       else setErr("Nothing came back — tap again to retry.");
     }catch(e){ setProg(""); setErr(aiErr(e,"Scan")); }
     setLoading(false);
@@ -3414,7 +3529,7 @@ function Watchlist({watch,setWatch,quotes,setQuotes}){
       const j=extractJson(getText(data));
       if(j&&typeof j==="object"){
         const clean={}; for(const k of Object.keys(j)){ const v=String(j[k]).toLowerCase(); clean[k.toUpperCase()]= v.includes("bull")?"bullish":v.includes("bear")?"bearish":"neutral"; }
-        const merged={...bias,...clean}; setBias(merged); await sSet("watch:bias",merged);
+        const merged={...bias,...clean}; setBias(merged); await sSet("watch:bias",merged); logScan("Bias scan", Object.keys(clean), Object.keys(clean).slice(0,6).map(k=>({s:k,note:clean[k]})));
       } else setErr("Couldn't parse the scan — try again.");
     }catch(e){ setErr(aiErr(e,"Scan")); }
     setScanning(false);
