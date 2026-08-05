@@ -1549,7 +1549,7 @@ function Goals({trades,setTrades,watch}){
       const sys=await withKB(MENTOR_SYS+`\n\nTASK — Find PLAYS sized to MY ACCOUNT. Account: ${fmtMoney(acctB)}. I risk ${num(riskPct)||4}% = ~${fmtMoney(acctRisk)} per trade, targeting 1:${rrN} (~${fmtMoney(acctWin)} per winner).${tAmtE!=null?` Goal: ${fmtMoney(tAmtE)} over the ${PNOUN}.`:""} Scan my watchlist for CURRENT setups (Strat continuity/patterns, at a level, real trigger potential) I can actually AFFORD and that risk about ${fmtMoney(acctRisk)} to the stop — pick strikes whose per-contract risk and cost fit this account, and say how many contracts. Search current structure; latest candle may be forming (pending). Return ONLY a JSON array, no prose/fences: [{"sym":"IWM","dir":"Short","why":"the setup in ≤16 words","strike":"289 Put","contracts":"e.g. 1-2","delta":"~0.58","dte":"3–5 DTE","risk":"~$ total to the stop (fits ${fmtMoney(acctRisk)})","target":"~$ if 1:${rrN} hits"}]. Keep it TIGHT: return the 3 best only, short fields, so the full JSON fits. Estimates — I confirm on chart/chain.`);
       const res=await callClaude({ maxTokens:1000, tools:[{type:"web_search_20250305",name:"web_search"}], system:sys, messages:[{role:"user",content:`Find plays my ${fmtMoney(acctB)} account can afford, risking ~${fmtMoney(acctRisk)} each. Watchlist: ${syms.join(", ")}. Today ${todayISO()}.`}] });
       let j=extractJson(getText(res)); if(!Array.isArray(j)||!j.length) j=extractObjs(getText(res));
-      if(Array.isArray(j)&&j.length){ const ap=j.filter(p=>p&&p.sym); setAPlays(ap); setATime(Date.now()); logScan("Account plays", ap.map(p=>p.sym), ap.slice(0,5).map(p=>({s:p.sym,note:String(p.why||p.dir||"").slice(0,40)}))); } else setAErr("Couldn't find plays — try again.");
+      if(Array.isArray(j)&&j.length){ const ap=j.filter(p=>p&&p.sym); setAPlays(ap); setATime(Date.now()); logScan("Account plays", ap.map(p=>p.sym), ap.map(p=>({s:p.sym,note:String(p.dir?p.dir+" · ":"").concat(String(p.why||"")).slice(0,60)}))); } else setAErr("Couldn't find plays — try again.");
     }catch(e){ setAErr(aiErr(e,"Scan")); }
     setALoad(false);
   }
@@ -1563,7 +1563,7 @@ function Goals({trades,setTrades,watch}){
       const sys=await withKB(MENTOR_SYS+`\n\nTASK — Find PLAYS to hit my profit goal. Goal: ${fmtMoney(tAmtE)} over the ${PNOUN}. Plan: about ${totalTrades} quality trades total, needing ~${fmtMoney(profitPerTrade)} average profit per trade at 1:${rrN}. Reference (50% win rate): risk ~${r50&&r50.risk!=null?fmtMoney(r50.risk):"?"} to make ~${r50&&r50.avgWin!=null?fmtMoney(r50.avgWin):"?"} per trade. Scan my watchlist for CURRENT setups (Strat continuity/patterns, at a level, real trigger potential) that can realistically deliver about 1:${rrN} at roughly that size, and give the exact contract to trade each. Search current structure; the latest candle may be forming (pending). Return ONLY a JSON array, no prose/fences: [{"sym":"IWM","dir":"Short","why":"the setup in ≤16 words","strike":"289 Put","delta":"~0.58","dte":"3–5 DTE","risk":"~$ per contract to the stop","target":"~$ if 1:${rrN} hits"}]. Keep it TIGHT: return the 3 best only, short fields, so the full JSON fits. Estimates — I confirm on chart/chain.`);
       const res=await callClaude({ maxTokens:1000, tools:[{type:"web_search_20250305",name:"web_search"}], system:sys, messages:[{role:"user",content:`Find 3–6 plays on my watchlist that fit this goal. Watchlist: ${syms.join(", ")}. Today is ${todayISO()}.`}] });
       let j=extractJson(getText(res)); if(!Array.isArray(j)||!j.length) j=extractObjs(getText(res));
-      if(Array.isArray(j)&&j.length){ const pp=j.filter(p=>p&&p.sym); setPlays(pp); setPTime(Date.now()); logScan("Goal plays", pp.map(p=>p.sym), pp.slice(0,5).map(p=>({s:p.sym,note:String(p.why||p.dir||"").slice(0,40)}))); } else setPErr("Couldn't find plays — try again.");
+      if(Array.isArray(j)&&j.length){ const pp=j.filter(p=>p&&p.sym); setPlays(pp); setPTime(Date.now()); logScan("Goal plays", pp.map(p=>p.sym), pp.map(p=>({s:p.sym,note:String(p.dir?p.dir+" · ":"").concat(String(p.why||"")).slice(0,60)}))); } else setPErr("Couldn't find plays — try again.");
     }catch(e){ setPErr(aiErr(e,"Scan")); }
     setPLoad(false);
   }
@@ -3399,7 +3399,7 @@ async function logScan(source, syms, top){
   try{
     const log = await sGet("scan:log") || [];
     const entry = { id: Date.now()+"-"+Math.random().toString(36).slice(2,6), ts: Date.now(), date: todayISO(),
-      source, syms:(syms||[]).map(s=>String(s||"").toUpperCase()).filter(Boolean).slice(0,30), top:(top||[]).slice(0,6) };
+      source, syms:(syms||[]).map(s=>String(s||"").toUpperCase()).filter(Boolean).slice(0,40), top:(top||[]).slice(0,40) };
     await sSet("scan:log", [entry, ...(Array.isArray(log)?log:[])].slice(0,400));
   }catch(e){}
 }
@@ -3559,7 +3559,7 @@ dir="up"|"down". px=last close. atr=avg DAILY range in $ (~14d). comp/lvl/cat/fu
         if(Array.isArray(j)) all=all.concat(j.filter(x=>x&&x.s));
       }
       setProg("");
-      if(all.length){ all.sort((a,b)=>runnerScore(b)-runnerScore(a)); setRows(all); const t=Date.now(); setWhen(t); sSet("runner_scan",{rows:all,when:t}); logScan("Runner", all.map(r=>r.s), all.slice(0,5).map(r=>({s:r.s,note:"score "+runnerScore(r)}))); }
+      if(all.length){ all.sort((a,b)=>runnerScore(b)-runnerScore(a)); setRows(all); const t=Date.now(); setWhen(t); sSet("runner_scan",{rows:all,when:t}); logScan("Runner", all.map(r=>r.s), all.map(r=>({s:r.s,note:(r.dir==="down"?"puts":"calls")+" · score "+runnerScore(r)}))); }
       else setErr("Nothing came back — tap again to retry.");
     }catch(e){ setProg(""); setErr(aiErr(e,"Scan")); }
     setLoading(false);
@@ -3813,7 +3813,7 @@ function Watchlist({watch,setWatch,quotes,setQuotes}){
       const j=extractJson(getText(data));
       if(j&&typeof j==="object"){
         const clean={}; for(const k of Object.keys(j)){ const v=String(j[k]).toLowerCase(); clean[k.toUpperCase()]= v.includes("bull")?"bullish":v.includes("bear")?"bearish":"neutral"; }
-        const merged={...bias,...clean}; setBias(merged); await sSet("watch:bias",merged); const t=Date.now(); setBiasWhen(t); await sSet("watch:bias:t",t); logScan("Bias scan", Object.keys(clean), Object.keys(clean).slice(0,6).map(k=>({s:k,note:clean[k]})));
+        const merged={...bias,...clean}; setBias(merged); await sSet("watch:bias",merged); const t=Date.now(); setBiasWhen(t); await sSet("watch:bias:t",t); logScan("Bias scan", Object.keys(clean), Object.keys(clean).map(k=>({s:k,note:clean[k]})));
       } else setErr("Couldn't parse the scan — try again.");
     }catch(e){ setErr(aiErr(e,"Scan")); }
     setScanning(false);
