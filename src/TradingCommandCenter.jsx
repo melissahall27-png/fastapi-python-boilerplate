@@ -494,7 +494,7 @@ export default function TradingCommandCenter(){
   useEffect(()=>{ if(loaded) sSet("watchlist:tickers",watch); },[watch,loaded]);
   useEffect(()=>{ if(loaded && Object.keys(quotes).length) sSet("quotes:last",quotes); },[quotes,loaded]);
 
-  const TABS=[["guide","Guide"],["today","Today"],["dash","Dashboard"],["journal","Journal"],["review","Review"],["watch","Watchlist"],["strat","Strat"],["runner","Runner"],["scans","Scans"],["sectors","Sectors"],["tools","Tools"],["news","News"],["play","Playbook"],["test","Test"],["library","Library"],["tutor","Tutor"]];
+  const TABS=[["guide","Guide"],["today","Today"],["dash","Dashboard"],["journal","Journal"],["review","Review"],["watch","Watchlist"],["strat","Strat"],["runner","Runner"],["scans","Scans"],["sectors","Sectors"],["tools","Tools"],["pl","P/L"],["news","News"],["play","Playbook"],["test","Test"],["library","Library"],["tutor","Tutor"]];
 
   return (
     <HelpCtx.Provider value={showHelp}>
@@ -549,6 +549,7 @@ export default function TradingCommandCenter(){
         {tab==="scans" && <ScanJournal trades={trades} />}
         {tab==="sectors" && <Sectors quotes={quotes} setQuotes={setQuotes} />}
         {tab==="tools" && <Tools watch={watch} setWatch={setWatch} />}
+        {tab==="pl" && <PayoffLab />}
         {tab==="news" && <News watch={watch} />}
         {tab==="play" && <Playbook />}
         {tab==="test" && <TestZone />}
@@ -3169,6 +3170,8 @@ function ChartModal({row,onClose}){
   const r=row||{};
   const sym=String(r.s||r.sym||"").toUpperCase();
   const [iv,setIv]=useState("D");
+  const [showPL,setShowPL]=useState(false);
+  const hasContract=num(r.strike)>0&&num(r.prem)>0;
   const L=linksFor(sym,iv);
   const tvE=encodeURIComponent(L.tvSym||sym);
   const embed=`https://s.tradingview.com/widgetembed/?symbol=${tvE}&interval=${iv}&theme=dark&style=1&toolbarbg=131722&withdateranges=1&hideideas=1&locale=en&timezone=America%2FNew_York`;
@@ -3188,6 +3191,7 @@ function ChartModal({row,onClose}){
           <div style={{display:"flex",gap:6,marginLeft:"auto"}}>
             {[["15","15m"],["60","1h"],["D","1D"]].map(([v,l])=>(
               <button key={v} className="btn" onClick={()=>setIv(v)} style={{padding:"5px 10px",fontSize:12,borderColor:iv===v?"var(--brass)":"var(--line2)",color:iv===v?"var(--brass)":"var(--dim)"}}>{l}</button>))}
+            {hasContract && <button className="btn" onClick={()=>setShowPL(v=>!v)} style={{padding:"5px 10px",fontSize:12,borderColor:showPL?"var(--brass)":"var(--line2)",color:showPL?"var(--brass)":"var(--dim)"}}>📉 P/L</button>}
           </div>
           <button className="btn" onClick={onClose} style={{padding:"5px 11px",fontSize:14}} aria-label="Close">✕</button>
         </div>
@@ -3201,6 +3205,10 @@ function ChartModal({row,onClose}){
         )}
         <div style={{flex:1,minHeight:340,background:"#0b0e13",overflow:"auto"}}>
           <ChartDraw sym={sym} interval={iv} levels={{trigger:trig,stop,target}}/>
+          {showPL && hasContract && <div style={{padding:"12px 14px",borderTop:"1px solid var(--line)"}}>
+            <div className="mono" style={{fontSize:11.5,color:"var(--faint)",marginBottom:7}}>P/L of buying the ${num(r.strike)} {up?"call":"put"}{r.dte?` · ${num(r.dte)}d`:""} @ ~${num(r.prem).toFixed(2)}</div>
+            <MiniPayoff spot={num(r.px)||trig||num(r.strike)} dir={r.dir} strike={num(r.strike)} prem={num(r.prem)} dte={num(r.dte)||14} ivPct={num(r.ivr)?Math.max(12,Math.min(90,num(r.ivr))):null}/>
+          </div>}
         </div>
         <div className="mono" style={{display:"flex",gap:12,flexWrap:"wrap",alignItems:"center",fontSize:10.5,color:"var(--faint)",padding:"8px 16px",borderTop:"1px solid var(--line)",lineHeight:1.5}}>
           <span>Candles: Yahoo Finance · trigger / stop / target drawn are the app's read. Not financial advice.</span>
@@ -3397,6 +3405,7 @@ function RunnerScan({watch}){
   const [when,setWhen]=useState(null);
   const [extra,setExtra]=useState("");
   const [open,setOpen]=useState(null);
+  const [plOpen,setPlOpen]=useState(null);
   const [seed,setSeed]=useState(null);
   const [minScore,setMinScore]=useState(0);
   const [chart,setChart]=useState(null);
@@ -3527,8 +3536,14 @@ dir="up"|"down". px=last close. atr=avg DAILY range in $ (~14d). comp/lvl/cat/fu
                 onClick={()=>{ setSeed({_t:Date.now(),sym:r.s,spot:String(num(r.px)||""),strike:String(num(r.strike)||""),prem:String(num(r.prem)||""),atr:String(num(r.atr)||""),dte:String(num(r.dte)||""),dir:r.dir==="down"?"Put":"Call"});
                   const el=document.getElementById("tenx"); if(el) el.scrollIntoView({behavior:"smooth",block:"start"}); }}>Run the 10x math →</button>
               <button className="btn" onClick={()=>setChart(r)} style={{padding:"8px 13px",fontSize:13}}>📈 Chart it for me</button>
+              {r.strike>0 && r.prem>0 && <button className="btn" onClick={()=>setPlOpen(plOpen===r.s?null:r.s)} style={{padding:"8px 13px",fontSize:13,borderColor:plOpen===r.s?"var(--brass)":"var(--line2)",color:plOpen===r.s?"var(--brass)":"var(--dim)"}}>📉 P/L curve</button>}
               <LinkBar sym={r.s}/>
             </div>
+
+            {plOpen===r.s && r.strike>0 && r.prem>0 && <div style={{marginTop:12}}>
+              <div className="mono" style={{fontSize:11.5,color:"var(--faint)",marginBottom:6}}>Buying the ${num(r.strike)} {r.dir==="down"?"put":"call"}{r.dte?` · ${num(r.dte)}d`:""} @ ~${num(r.prem).toFixed(2)} on ${r.s} at ${num(r.px)?"$"+num(r.px).toFixed(2):"last"}</div>
+              <MiniPayoff spot={num(r.px)||num(r.strike)} dir={r.dir} strike={num(r.strike)} prem={num(r.prem)} dte={num(r.dte)||14} ivPct={num(r.ivr)?Math.max(12,Math.min(90,num(r.ivr))):null}/>
+            </div>}
 
             {isOpen && <div style={{marginTop:14,paddingTop:14,borderTop:"1px solid var(--line)"}}>
               <ScoreBar label="Compression" v={r.comp}/>
@@ -5340,6 +5355,205 @@ function StratDia({kind}){
         </g>)); })()}
       {D.bars.map(bar)}
     </svg>);
+}
+/* ---------- Options P/L Lab — multi-leg payoff curves (Black-Scholes) ---------- */
+function normCdf(x){
+  const b1=0.319381530,b2=-0.356563782,b3=1.781477937,b4=-1.821255978,b5=1.330274429,p=0.2316419,c=0.39894228;
+  if(x<0) return 1-normCdf(-x);
+  const t=1/(1+p*x);
+  return 1-c*Math.exp(-x*x/2)*t*(t*(t*(t*(t*b5+b4)+b3)+b2)+b1);
+}
+function bsPrice(type,S,K,t,iv,r){
+  if(!(S>0)||!(K>0)) return 0;
+  if(!(t>0)) return type==="put"?Math.max(K-S,0):Math.max(S-K,0);
+  const sig=Math.max(iv,0.0001), sq=Math.sqrt(t);
+  const d1=(Math.log(S/K)+(r+sig*sig/2)*t)/(sig*sq), d2=d1-sig*sq;
+  return type==="put" ? K*Math.exp(-r*t)*normCdf(-d2)-S*normCdf(-d1)
+                      : S*normCdf(d1)-K*Math.exp(-r*t)*normCdf(d2);
+}
+/* Back out each leg's implied vol from the premium you actually paid, so the
+   curve is self-consistent (today's line passes through $0 at the current price). */
+function impliedVol(type,S,K,t,prem,r){
+  if(!(t>0)||!(S>0)||!(K>0)) return null;
+  const intr=type==="put"?Math.max(K-S,0):Math.max(S-K,0);
+  if(prem<=intr+1e-4) return null;
+  let lo=0.001,hi=5;
+  for(let i=0;i<64;i++){ const mid=(lo+hi)/2; if(bsPrice(type,S,K,t,mid,r)>prem) hi=mid; else lo=mid; }
+  const v=(lo+hi)/2; return (v>0.0005&&v<4.99)?v:null;
+}
+const PL_R=0.04;
+/* Pure payoff model — used by the P/L Lab AND embedded mini-curves in scans/charts. */
+function computePayoff(legsRaw, spot, ivPct){
+  const S=num(spot), emIv=(num(ivPct)||0)/100;
+  const L=legsRaw.map(l=>({dir:l.dir==="sell"?-1:1,type:l.type,K:num(l.strike),qty:Math.max(0,num(l.qty)||0),dte:Math.max(0,num(l.dte)||0),prem:num(l.prem)||0}))
+    .filter(l=>l.K>0&&l.qty>0)
+    .map(l=>{ const solved=impliedVol(l.type,S,l.K,l.dte/365,l.prem,PL_R); return {...l, iv:(solved&&isFinite(solved))?solved:(emIv||0.3)}; });
+  if(!(S>0)||!L.length) return null;
+  const horizon=Math.min(...L.map(l=>l.dte));
+  const maxDte=Math.max(...L.map(l=>l.dte));
+  const bandIv=emIv || (L.reduce((a,l)=>a+l.iv,0)/L.length);
+  const emH=S*bandIv*Math.sqrt(Math.max(horizon,0.5)/365);
+  const emMax=S*bandIv*Math.sqrt(Math.max(maxDte,1)/365);
+  const strikes=L.map(l=>l.K);
+  let lo=Math.min(S,...strikes)-1.7*emMax, hi=Math.max(S,...strikes)+1.7*emMax;
+  if(hi-lo<S*0.08){ lo=S*0.9; hi=S*1.1; }
+  lo=Math.max(lo,0.01);
+  const entry=L.reduce((a,l)=>a+l.dir*l.qty*l.prem,0);
+  const val=(price,asOf)=>L.reduce((a,l)=>{ const t=Math.max(0,(l.dte-asOf))/365; return a+l.dir*l.qty*bsPrice(l.type,price,l.K,t,l.iv,PL_R); },0);
+  const N=120, now=[], hz=[];
+  for(let i=0;i<=N;i++){ const price=lo+(hi-lo)*i/N; now.push([price,(val(price,0)-entry)*100]); hz.push([price,(val(price,horizon)-entry)*100]); }
+  const bes=[]; for(let i=1;i<hz.length;i++){ const [p0,v0]=hz[i-1],[p1,v1]=hz[i]; if((v0<=0&&v1>0)||(v0>=0&&v1<0)){ const f=v0/(v0-v1); bes.push(p0+(p1-p0)*f); } }
+  let maxP=-1e9,minP=1e9; hz.forEach(([,v])=>{ if(v>maxP)maxP=v; if(v<minP)minP=v; });
+  const edgeRising=hz[hz.length-1][1]>hz[hz.length-2][1]+0.5;
+  const uncappedUp=(L.some(l=>l.dir>0&&l.type==="call")&&edgeRising);
+  const netStr=entry>0?`$${Math.abs(entry*100).toFixed(0)} debit`:entry<0?`$${Math.abs(entry*100).toFixed(0)} credit`:"$0";
+  return {S,bandIv,L,horizon,maxDte,emH,emMax,lo,hi,now,hz,bes,maxP,minP,entry,netStr,uncappedUp,plNowAtS:(val(S,0)-entry)*100};
+}
+/* Build a one-leg position from a scan's suggested contract, then its payoff. */
+function contractPayoff({spot,dir,strike,prem,dte,ivPct}){
+  const type=(dir==="down"||dir==="Put"||dir==="put")?"put":"call";
+  return computePayoff([{dir:"buy",type,strike,qty:1,dte:dte||14,prem}], spot, ivPct);
+}
+const PL_PRESETS={
+  call:{name:"Long call",legs:[{dir:"buy",type:"call",strike:700,qty:1,dte:30,prem:12}]},
+  vertical:{name:"Call debit spread",legs:[{dir:"buy",type:"call",strike:690,qty:1,dte:30,prem:16},{dir:"sell",type:"call",strike:710,qty:1,dte:30,prem:7}]},
+  straddle:{name:"Long straddle",legs:[{dir:"buy",type:"call",strike:690,qty:1,dte:30,prem:15},{dir:"buy",type:"put",strike:690,qty:1,dte:30,prem:14}]},
+  calendar:{name:"Calendar spread",legs:[{dir:"buy",type:"call",strike:700,qty:1,dte:38,prem:5.13},{dir:"sell",type:"call",strike:700,qty:1,dte:10,prem:0.80}]},
+  condor:{name:"Iron condor",legs:[{dir:"sell",type:"put",strike:660,qty:1,dte:30,prem:6},{dir:"buy",type:"put",strike:640,qty:1,dte:30,prem:3},{dir:"sell",type:"call",strike:720,qty:1,dte:30,prem:6},{dir:"buy",type:"call",strike:740,qty:1,dte:30,prem:3}]},
+};
+function PayoffLab(){
+  const [sym,setSym]=useState("");
+  const [spot,setSpot]=useState("690");
+  const [iv,setIv]=useState("28");
+  const [legs,setLegs]=useState(PL_PRESETS.calendar.legs.map((l,i)=>({...l,id:i})));
+  const [fetching,setFetching]=useState(false);
+  const [note,setNote]=useState("");
+  useEffect(()=>{(async()=>{ const s=await sGet("pl:state"); if(s&&s.legs){ setLegs(s.legs); if(s.spot)setSpot(s.spot); if(s.iv)setIv(s.iv); if(s.sym)setSym(s.sym);} })();},[]);
+  useEffect(()=>{ sSet("pl:state",{legs,spot,iv,sym}); },[legs,spot,iv,sym]);
+
+  const preset=k=>{ const p=PL_PRESETS[k]; setLegs(p.legs.map((l,i)=>({...l,id:Date.now()+i}))); };
+  const setLeg=(id,k,v)=>setLegs(ls=>ls.map(l=>l.id===id?{...l,[k]:v}:l));
+  const addLeg=()=>setLegs(ls=>[...ls,{id:Date.now(),dir:"buy",type:"call",strike:Math.round(num(spot)||700),qty:1,dte:30,prem:5}]);
+  const delLeg=id=>setLegs(ls=>ls.filter(l=>l.id!==id));
+  async function fetchPrice(){
+    const s=sym.trim().toUpperCase(); if(!s) return; setFetching(true); setNote("");
+    try{ const r=await fetch(`/api/quotes?symbols=${encodeURIComponent(s)}`); const j=await r.json();
+      const q=j&&j.quotes&&j.quotes[s]; if(q&&q.price){ setSpot(String(Math.round(q.price*100)/100)); setNote(`${s} @ $${q.price.toFixed(2)} (last)`);} else setNote("No price — enter it manually."); }
+    catch(e){ setNote("Couldn't fetch — enter it manually."); }
+    setFetching(false);
+  }
+
+  const model=useMemo(()=>computePayoff(legs,spot,iv),[legs,spot,iv]);
+
+  const fld={fontFamily:"inherit",background:"var(--bg)",border:"1px solid var(--line2)",color:"var(--bone)",borderRadius:7,padding:"7px 9px",fontSize:13.5,outline:"none"};
+  return (
+    <div>
+      <div className="card" style={{padding:20,marginBottom:16}}>
+        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:5}}>
+          <div className="eyebrow" style={{margin:0}}>P/L Lab</div>
+          <Help text="Draws the profit/loss curve of any options position across the stock price — the smooth line before expiry (Black-Scholes) and the payoff as of the nearest expiry, with the expected-move band, breakevens, and max profit/loss. Great for seeing calendars, spreads, straddles and condors before you put them on. Premiums & IV are your inputs — confirm on the live chain."/>
+        </div>
+        <div className="disp" style={{fontSize:25,fontWeight:800,marginBottom:8}}>See the trade before you take it</div>
+        <div style={{fontSize:14,color:"var(--dim)",lineHeight:1.6,marginBottom:14}}>Build a position leg by leg and watch its P/L curve — where it makes money, where it breaks even, and the most it can win or lose. The bright curve is the payoff as of your nearest expiry; the faint one is today.</div>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:14}}>
+          {Object.entries(PL_PRESETS).map(([k,p])=><button key={k} className="btn" onClick={()=>preset(k)} style={{padding:"6px 11px",fontSize:12.5}}>{p.name}</button>)}
+        </div>
+        <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"flex-end"}}>
+          <div><div className="eyebrow" style={{fontSize:10,marginBottom:3}}>Symbol (optional)</div><div style={{display:"flex",gap:6}}><input value={sym} onChange={e=>setSym(e.target.value)} placeholder="SPX" style={{...fld,width:90}}/><button className="btn" onClick={fetchPrice} disabled={fetching} style={{padding:"7px 10px",fontSize:12.5}}>{fetching?<span className="spin"/>:"Price"}</button></div></div>
+          <div><div className="eyebrow" style={{fontSize:10,marginBottom:3}}>Stock price</div><input value={spot} onChange={e=>setSpot(e.target.value)} style={{...fld,width:90}}/></div>
+          <div><div className="eyebrow" style={{fontSize:10,marginBottom:3}}>IV %</div><input value={iv} onChange={e=>setIv(e.target.value)} style={{...fld,width:70}}/></div>
+          {note && <div className="mono" style={{fontSize:12,color:"var(--faint)",paddingBottom:8}}>{note}</div>}
+        </div>
+      </div>
+
+      {model && <PayoffChart m={model}/>}
+
+      <div className="card" style={{padding:16,marginTop:16}}>
+        <div style={{display:"flex",alignItems:"center",marginBottom:10}}><div className="eyebrow" style={{margin:0}}>Legs</div><button className="btn" onClick={addLeg} style={{marginLeft:"auto",padding:"5px 11px",fontSize:12.5}}>+ Add leg</button></div>
+        <div style={{display:"flex",flexDirection:"column",gap:8}}>
+          {legs.map(l=>(
+            <div key={l.id} style={{display:"grid",gridTemplateColumns:"84px 74px 1fr 60px 68px 78px 28px",gap:7,alignItems:"center"}}>
+              <select value={l.dir} onChange={e=>setLeg(l.id,"dir",e.target.value)} style={{...fld,appearance:"auto",color:l.dir==="buy"?"var(--bull)":"var(--bear)",fontWeight:700}}><option value="buy">Buy</option><option value="sell">Sell</option></select>
+              <select value={l.type} onChange={e=>setLeg(l.id,"type",e.target.value)} style={{...fld,appearance:"auto"}}><option value="call">Call</option><option value="put">Put</option></select>
+              <div style={{display:"flex",gap:5,alignItems:"center"}}><span className="mono" style={{fontSize:11,color:"var(--faint)"}}>K</span><input value={l.strike} onChange={e=>setLeg(l.id,"strike",e.target.value)} style={{...fld,width:"100%"}}/></div>
+              <div style={{display:"flex",gap:4,alignItems:"center"}}><span className="mono" style={{fontSize:11,color:"var(--faint)"}}>×</span><input value={l.qty} onChange={e=>setLeg(l.id,"qty",e.target.value)} style={{...fld,width:"100%"}}/></div>
+              <div style={{display:"flex",gap:4,alignItems:"center"}}><input value={l.dte} onChange={e=>setLeg(l.id,"dte",e.target.value)} style={{...fld,width:"100%"}}/><span className="mono" style={{fontSize:11,color:"var(--faint)"}}>d</span></div>
+              <div style={{display:"flex",gap:4,alignItems:"center"}}><span className="mono" style={{fontSize:11,color:"var(--faint)"}}>$</span><input value={l.prem} onChange={e=>setLeg(l.id,"prem",e.target.value)} style={{...fld,width:"100%"}}/></div>
+              <button onClick={()=>delLeg(l.id)} title="Remove" style={{background:"none",border:"1px solid var(--line2)",color:"var(--faint)",borderRadius:6,height:30,cursor:"pointer"}}>×</button>
+            </div>))}
+        </div>
+        <div className="mono" style={{fontSize:11,color:"var(--faint)",marginTop:9}}>Buy/Sell · Call/Put · strike K · contracts × · days-to-expiry d · premium per share $. Premiums & IV are estimates — confirm on the live chain.</div>
+      </div>
+    </div>
+  );
+}
+function PayoffChart({m,compact}){
+  const uid=React.useId().replace(/[^a-zA-Z0-9]/g,"");
+  const clipA="pa"+uid, clipB="pb"+uid;
+  const W=720,H=compact?190:340,padL=20,padR=20,padT=compact?12:18,padB=compact?30:42;
+  const X=p=>padL+((p-m.lo)/(m.hi-m.lo))*(W-padL-padR);
+  const yMin=Math.min(m.minP,0), yMax=Math.max(m.maxP,0), yr=(yMax-yMin)||1;
+  const Y=v=>padT+(1-(v-yMin)/yr)*(H-padT-padB);
+  const zeroY=Y(0);
+  const line=a=>a.map(([p,v])=>`${X(p)},${Y(v)}`).join(" ");
+  const area=a=>`${a.map(([p,v])=>`${X(p)},${Y(v)}`).join(" ")} ${X(a[a.length-1][0])},${zeroY} ${X(a[0][0])},${zeroY}`;
+  const UP="#3FB782",DN="#E76A5B",BR="#E3A857",FOC="#6FA8DC",L="#333D49",DIM="#8792A0";
+  const strikes=[...new Set(m.L.map(l=>l.K))];
+  const fmt=v=>(v>=0?"+":"−")+"$"+Math.abs(Math.round(v));
+  return (
+    <div className="card" style={{padding:compact?"10px 10px 6px":"14px 12px 8px"}}>
+      <div style={{display:"flex",gap:compact?12:14,flexWrap:"wrap",marginBottom:8,padding:"0 6px"}}>
+        {[["Net",m.netStr,m.entry>0?"var(--bear)":"var(--bull)"],
+          ["Max profit",m.uncappedUp?"uncapped ↑":fmt(m.maxP),m.maxP>=0?"var(--bull)":"var(--bear)"],
+          ["Max loss",fmt(m.minP),"var(--bear)"],
+          ["Breakevens",m.bes.length?m.bes.map(b=>"$"+b.toFixed(0)).join(" · "):"—","var(--bone)"],
+          ["Exp. move",`±$${m.emH.toFixed(0)} (${m.horizon}d)`,"var(--focus)"]
+        ].map(([l,v,c],i)=>(
+          <div key={i}><div className="eyebrow" style={{fontSize:9.5,marginBottom:2}}>{l}</div><div className="mono" style={{fontSize:compact?13:14.5,fontWeight:800,color:c}}>{v}</div></div>))}
+      </div>
+      <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{background:"#0E1116",border:"1px solid "+L,borderRadius:8}}>
+        <defs>
+          <clipPath id={clipA}><rect x="0" y="0" width={W} height={zeroY}/></clipPath>
+          <clipPath id={clipB}><rect x="0" y={zeroY} width={W} height={H-zeroY}/></clipPath>
+        </defs>
+        {/* expected move band (±1σ) */}
+        <rect x={X(Math.max(m.S-m.emH,m.lo))} y={padT} width={Math.max(0,X(Math.min(m.S+m.emH,m.hi))-X(Math.max(m.S-m.emH,m.lo)))} height={H-padT-padB} fill={FOC} opacity="0.07"/>
+        <line x1={X(Math.max(m.S-m.emH,m.lo))} x2={X(Math.max(m.S-m.emH,m.lo))} y1={padT} y2={H-padB} stroke={FOC} strokeWidth="1" strokeDasharray="3 3" opacity="0.4"/>
+        <line x1={X(Math.min(m.S+m.emH,m.hi))} x2={X(Math.min(m.S+m.emH,m.hi))} y1={padT} y2={H-padB} stroke={FOC} strokeWidth="1" strokeDasharray="3 3" opacity="0.4"/>
+        {/* P/L fills (green profit / red loss) on the horizon curve */}
+        <polygon points={area(m.hz)} fill={UP} opacity="0.16" clipPath={`url(#${clipA})`}/>
+        <polygon points={area(m.hz)} fill={DN} opacity="0.16" clipPath={`url(#${clipB})`}/>
+        {/* zero line */}
+        <line x1={padL} x2={W-padR} y1={zeroY} y2={zeroY} stroke={DIM} strokeWidth="1" opacity="0.6"/>
+        {/* strike ticks */}
+        {strikes.map((k,i)=>(<g key={i}><line x1={X(k)} x2={X(k)} y1={padT} y2={H-padB} stroke={BR} strokeWidth="1" strokeDasharray="2 4" opacity="0.35"/><text x={X(k)} y={H-padB+13} fill={BR} fontSize="9.5" fontFamily="'JetBrains Mono',monospace" textAnchor="middle">{k}</text></g>))}
+        {/* now curve (faint) + horizon curve (bright) */}
+        <polyline points={line(m.now)} fill="none" stroke={DIM} strokeWidth="1.6" strokeDasharray="5 4" opacity="0.8"/>
+        <polyline points={line(m.hz)} fill="none" stroke={BR} strokeWidth="2.4" strokeLinejoin="round"/>
+        {/* breakevens */}
+        {m.bes.map((b,i)=>(<g key={i}><circle cx={X(b)} cy={zeroY} r="3.4" fill="#0E1116" stroke={BR} strokeWidth="1.6"/><text x={X(b)} y={zeroY-7} fill={BR} fontSize="9" fontFamily="'JetBrains Mono',monospace" textAnchor="middle">{b.toFixed(0)}</text></g>))}
+        {/* current price flag */}
+        <line x1={X(m.S)} x2={X(m.S)} y1={padT} y2={H-padB} stroke="#E9E6DF" strokeWidth="1.2" opacity="0.85"/>
+        <polygon points={`${X(m.S)},${padT} ${X(m.S)+11},${padT+4} ${X(m.S)},${padT+9}`} fill="#E9E6DF"/>
+        <text x={X(m.S)+13} y={padT+8} fill="#E9E6DF" fontSize="9.5" fontFamily="'JetBrains Mono',monospace" fontWeight="700">${m.S.toFixed(0)}</text>
+        {/* y labels */}
+        <text x={padL+2} y={padT+9} fill={UP} fontSize="9.5" fontFamily="'JetBrains Mono',monospace">{fmt(yMax)}</text>
+        <text x={padL+2} y={H-padB-3} fill={DN} fontSize="9.5" fontFamily="'JetBrains Mono',monospace">{fmt(yMin)}</text>
+        {/* legend */}
+        <g transform={`translate(${W-padR-190},${padT+2})`}>
+          <line x1="0" x2="18" y1="0" y2="0" stroke={BR} strokeWidth="2.4"/><text x="22" y="3" fill={DIM} fontSize="9" fontFamily="'JetBrains Mono',monospace">at {m.horizon}d expiry</text>
+          <line x1="98" x2="116" y1="0" y2="0" stroke={DIM} strokeWidth="1.6" strokeDasharray="5 4"/><text x="120" y="3" fill={DIM} fontSize="9" fontFamily="'JetBrains Mono',monospace">today</text>
+        </g>
+      </svg>
+      {!compact && <div className="mono" style={{fontSize:11,color:"var(--faint)",padding:"6px 8px 2px",lineHeight:1.5}}>Blue band = 1σ expected move by the {m.horizon}-day expiry. Green = profit, red = loss as of that expiry. Priced with Black-Scholes, each leg's vol backed out of the premium you entered — a guide, not a guarantee; verify on the live chain.</div>}
+    </div>
+  );
+}
+/* Embeddable payoff curve for a scan's / chart's suggested contract. */
+function MiniPayoff({spot,dir,strike,prem,dte,ivPct}){
+  const m=useMemo(()=>contractPayoff({spot,dir,strike,prem,dte,ivPct}),[spot,dir,strike,prem,dte,ivPct]);
+  if(!m) return <div className="mono" style={{fontSize:12,color:"var(--faint)",padding:"8px 2px"}}>Add a strike, premium and DTE to see the P/L curve.</div>;
+  return <PayoffChart m={m} compact/>;
 }
 /* ---------- Test / quiz engine — built from the glossary, graded, tracked ---------- */
 const stripHtml=s=>String(s||"").replace(/<[^>]+>/g," ").replace(/\s+/g," ").trim();
