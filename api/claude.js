@@ -35,6 +35,10 @@ export default async function handler(req, res) {
     // logic keys off 429 and 5xx, so masking them here would break the throttle.
     res.status(upstream.status);
     res.setHeader("Content-Type", "application/json");
+    // Forward Anthropic's own "retry-after" so the client waits exactly as long
+    // as the API asks (often far less than the app's fallback cooldown guess).
+    const ra = upstream.headers.get("retry-after");
+    if (ra) res.setHeader("Retry-After", ra);
     return res.send(text);
   } catch (e) {
     return res.status(502).json({

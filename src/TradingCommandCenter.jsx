@@ -110,6 +110,38 @@ async function sSet(key,val){
   catch(e){ mem[key] = val; }   // private mode / quota full -> session-only
 }
 
+/* ---------- auto-run scans ----------
+   Prices are free (Yahoo) and refresh on their own, but each SCAN is a paid AI
+   call, so scans never auto-run unless the user turns ⏱ Auto ON. When it's on, a
+   scanner re-runs itself once when you open its tab — but only if the last scan
+   is stale (older than AUTO_STALE_MS). A fresh scan is left alone, so opening a
+   tab you just scanned won't spend a cent. "Scan / refresh now" buttons are
+   always there regardless of the toggle. Default: OFF. */
+const AUTO_STALE_MS = 30*60*1000;   // re-run a scan only if the last one is older than 30 min
+const autoSubs = [];
+function autoScansOn(){ try{ return window.localStorage.getItem(TCC_PREFIX+"auto:scans")==="true"; }catch(e){ return mem["auto:scans"]===true; } }
+function setAutoScans(v){ try{ window.localStorage.setItem(TCC_PREFIX+"auto:scans", v?"true":"false"); }catch(e){ mem["auto:scans"]=!!v; } autoSubs.forEach(f=>{ try{ f(); }catch(e){} }); }
+function autoSub(f){ autoSubs.push(f); return ()=>{ const i=autoSubs.indexOf(f); if(i>=0) autoSubs.splice(i,1); }; }
+/* Fire runFn once when a scanner mounts (its tab was opened) — and again the
+   moment Auto is flipped on — IF Auto is on and the last scan is stale. `ready`
+   guards against firing before the stored last-scan time has loaded; a ref makes
+   sure it never loops or double-spends within a single mount. */
+function useAutoScan(ready, lastTs, busy, runFn){
+  const ran = useRef(false);
+  const fn = useRef(runFn); fn.current = runFn;
+  useEffect(()=>{
+    function maybe(){
+      if(ran.current || !ready || busy || !autoScansOn()) return;
+      const stale = !lastTs || (Date.now()-lastTs) > AUTO_STALE_MS;
+      if(!stale) return;
+      ran.current = true;
+      try{ fn.current(); }catch(e){}
+    }
+    maybe();
+    return autoSub(maybe);
+  },[ready,lastTs,busy]);
+}
+
 /* ---------- api helpers ---------- */
 /* One global gate for every AI call in the app: requests are serialized with a
    minimum gap, retried with real backoff, and a rate-limit trips a visible
@@ -164,9 +196,13 @@ async function callClaude({system, messages, tools, maxTokens=1000}){
         let t=""; try{ t=await res.text(); }catch(e){}
         lastErr="API "+res.status+(t?": "+t.slice(0,140):"");
         if(res.status===429 || res.status>=500 || isRateLimit(t)){
-          if(a<3){ await new Promise(r=>setTimeout(r, backoff[a])); continue; }
+          // Anthropic tells us exactly how long to wait — honor it (capped) for
+          // both the retry spacing and the visible cooldown, instead of guessing.
+          const ra=parseInt(res.headers.get("retry-after")||"",10);
+          const raMs=(isFinite(ra)&&ra>0)?Math.min(ra,300)*1000:0;
+          if(a<3){ await new Promise(r=>setTimeout(r, raMs||backoff[a])); continue; }
           AI.gap=Math.min(AI.gapMax, AI.gap*1.75);
-          AI.trips=(AI.trips||0)+1; AI.coolUntil = Date.now()+(AI.trips>=3?300000:AI.trips===2?120000:45000); aiPing();
+          AI.trips=(AI.trips||0)+1; AI.coolUntil = Date.now()+(raMs||(AI.trips>=3?300000:AI.trips===2?120000:45000)); aiPing();
           throw new Error(RL_MSG);
         }
         throw new Error(lastErr);
@@ -364,6 +400,9 @@ export default function TradingCommandCenter(){
   const [showHelp,setShowHelp]=useState(true);
   useEffect(()=>{ (async()=>{ try{ const s=await sGet("ui:showHelp"); if(s===false) setShowHelp(false); }catch(e){} })(); },[]);
   useEffect(()=>{ sSet("ui:showHelp",showHelp); },[showHelp]);
+  const [autoScans,setAutoScansState]=useState(false);
+  useEffect(()=>{ setAutoScansState(autoScansOn()); },[]);
+  const toggleAuto=()=>{ const v=!autoScansOn(); setAutoScans(v); setAutoScansState(v); };
   const firstSave=useRef(true);
 
   // load
@@ -455,7 +494,7 @@ export default function TradingCommandCenter(){
   useEffect(()=>{ if(loaded) sSet("watchlist:tickers",watch); },[watch,loaded]);
   useEffect(()=>{ if(loaded && Object.keys(quotes).length) sSet("quotes:last",quotes); },[quotes,loaded]);
 
-  const TABS=[["guide","Guide"],["today","Today"],["dash","Dashboard"],["journal","Journal"],["review","Review"],["watch","Watchlist"],["strat","Strat"],["runner","Runner"],["scans","Scans"],["sectors","Sectors"],["tools","Tools"],["news","News"],["play","Playbook"],["tutor","Tutor"]];
+  const TABS=[["guide","Guide"],["today","Today"],["dash","Dashboard"],["journal","Journal"],["review","Review"],["watch","Watchlist"],["strat","Strat"],["runner","Runner"],["scans","Scans"],["sectors","Sectors"],["tools","Tools"],["news","News"],["play","Playbook"],["library","Library"],["tutor","Tutor"]];
 
   return (
     <HelpCtx.Provider value={showHelp}>
@@ -476,7 +515,10 @@ export default function TradingCommandCenter(){
             <div style={{color:"var(--faint)",fontSize:12.5}}>NO SIGNAL = NO TRADE</div>
             <div style={{color:"var(--brass-dim)",fontSize:12,marginTop:2}}>{tradingDaysLeft("monthly")} trading days left this month</div>
             <AiMeter/>
-            <button onClick={()=>setShowHelp(v=>!v)} className="mono" style={{marginTop:6,border:"1px solid var(--line2)",background:showHelp?"transparent":"var(--bg3)",color:showHelp?"var(--dim)":"var(--brass)",borderRadius:7,padding:"4px 10px",fontSize:11.5,fontWeight:700,cursor:"pointer"}}>{showHelp?"? tips ON":"? tips OFF"}</button>
+            <div style={{marginTop:6,display:"flex",gap:6,justifyContent:"flex-end",flexWrap:"wrap"}}>
+              <button onClick={()=>setShowHelp(v=>!v)} className="mono" style={{border:"1px solid var(--line2)",background:showHelp?"transparent":"var(--bg3)",color:showHelp?"var(--dim)":"var(--brass)",borderRadius:7,padding:"4px 10px",fontSize:11.5,fontWeight:700,cursor:"pointer"}}>{showHelp?"? tips ON":"? tips OFF"}</button>
+              <button onClick={toggleAuto} title="When ON, the Runner and Watchlist scans re-run themselves when you open the tab — but only if the last scan is over 30 min old. Each scan is a paid AI call; prices stay free either way." className="mono" style={{border:"1px solid "+(autoScans?"var(--brass)":"var(--line2)"),background:autoScans?"var(--bg3)":"transparent",color:autoScans?"var(--brass)":"var(--dim)",borderRadius:7,padding:"4px 10px",fontSize:11.5,fontWeight:700,cursor:"pointer"}}>{autoScans?"⏱ Auto ON":"⏱ Auto OFF"}</button>
+            </div>
           </div>
         </div>
 
@@ -509,6 +551,7 @@ export default function TradingCommandCenter(){
         {tab==="tools" && <Tools watch={watch} setWatch={setWatch} />}
         {tab==="news" && <News watch={watch} />}
         {tab==="play" && <Playbook />}
+        {tab==="library" && <KnowledgeLibrary />}
         {tab==="tutor" && <Tutor trades={trades} />}
       </div>
     </div>
@@ -3168,6 +3211,56 @@ function ChartModal({row,onClose}){
   );
 }
 
+/* ---------- Ask the coach: reusable chat you can drop under any tab ----------
+   Feed it a `context` string describing what's on screen (the scan results, the
+   journal stats) and it answers with the same mentor brain + the trader's own
+   knowledge base as the rest of the app. Each question is one paid AI call, so
+   it stays manual — no auto-firing. */
+function AskCoach({ title="Ask the coach", intro, context="", placeholder="Ask the coach…", suggestions=[] }){
+  const [msgs,setMsgs]=useState([]);
+  const [inp,setInp]=useState("");
+  const [busy,setBusy]=useState(false);
+  async function ask(q){
+    const text=String(q!=null?q:inp).trim(); if(!text||busy) return;
+    const hist=[...msgs,{role:"user",content:text}];
+    setMsgs(hist); setInp(""); setBusy(true);
+    try{
+      const sys=await withKB(MENTOR_SYS+`\n\nThe trader is on a scan screen and is asking you, their coach, a question.${context?("\n\nCONTEXT — what's on their screen right now:\n"+context):""}\n\nAnswer using that context and their rules/knowledge base. Be blunt, probability-first and educational — never a guaranteed call, always tell them to confirm live prices themselves. You may search for current market info if it helps. Today is ${todayISO()}. Keep it tight (≤ 170 words).`);
+      const res=await callClaude({ maxTokens:750, tools:[{type:"web_search_20250305",name:"web_search"}], system:sys, messages:hist.map(m=>({role:m.role,content:m.content})) });
+      setMsgs([...hist,{role:"assistant",content:getText(res)||"(no response)"}]);
+    }catch(e){ setMsgs([...hist,{role:"assistant",content:"("+aiErr(e,"Reply")+")"}]); }
+    setBusy(false);
+  }
+  const fld={fontFamily:"inherit",background:"var(--bg)",border:"1px solid var(--line2)",color:"var(--bone)",borderRadius:8,padding:"9px 11px",fontSize:14,outline:"none"};
+  return (
+    <div className="card" style={{padding:18,marginTop:16,borderColor:"var(--brass-dim)"}}>
+      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
+        <div className="eyebrow" style={{margin:0,color:"var(--brass)"}}>🧠 {title}</div>
+        <Help text="Ask the mentor coach anything about what's on this screen — which setup is cleanest, why a ticker scored where it did, which scanner is making you money, what to do next. Uses your rules + knowledge base. Each question is one AI call."/>
+      </div>
+      <div style={{fontSize:13,color:"var(--dim)",lineHeight:1.55,marginBottom:12}}>{intro||"Ask about anything on this screen. Answers use your rules and knowledge base."}</div>
+      {msgs.length>0 &&
+        <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:10,maxHeight:340,overflowY:"auto"}}>
+          {msgs.map((m,i)=>(
+            <div key={i} style={{alignSelf:m.role==="user"?"flex-end":"flex-start",maxWidth:"88%",padding:"9px 12px",borderRadius:11,fontSize:14,lineHeight:1.55,whiteSpace:"pre-wrap",
+              background:m.role==="user"?"var(--brass-dim)":"var(--bg)",color:m.role==="user"?"#241A0A":"var(--bone)",border:m.role==="user"?"none":"1px solid var(--line)"}}>{m.content}</div>
+          ))}
+          {busy && <div style={{alignSelf:"flex-start",padding:"9px 12px"}}><span className="spin"/></div>}
+        </div>}
+      {suggestions.length>0 && msgs.length===0 &&
+        <div style={{display:"flex",gap:7,flexWrap:"wrap",marginBottom:10}}>
+          {suggestions.map((s,i)=>(
+            <button key={i} className="btn" onClick={()=>ask(s)} disabled={busy} style={{padding:"6px 11px",fontSize:12.5,borderColor:"var(--line2)",color:"var(--dim)"}}>{s}</button>
+          ))}
+        </div>}
+      <div style={{display:"flex",gap:8}}>
+        <input value={inp} onChange={e=>setInp(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")ask();}} placeholder={placeholder} style={{...fld,flex:1}}/>
+        <button className="btn-primary btn" onClick={()=>ask()} disabled={busy||!inp.trim()}>Send</button>
+      </div>
+    </div>
+  );
+}
+
 /* ---------- Scan journal: auto-logs every scan, matches the trades you took, scores each scanner ---------- */
 async function logScan(source, syms, top){
   try{
@@ -3265,7 +3358,11 @@ function ScanJournal({trades}){
             </div>
             {open && <div style={{marginTop:12,paddingTop:12,borderTop:"1px solid var(--line)"}}>
               <div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:tl.length?12:0}}>
-                {((s.top&&s.top.length)?s.top:(s.syms||[]).map(x=>({s:x}))).map((it,i)=>(
+                {/* Show EVERY ticker from the scan, not just the top few; carry the score/note onto the ones that have it. */}
+                {((s.syms&&s.syms.length)
+                    ? s.syms.map(sym=>{ const hit=(s.top||[]).find(x=>String(x.s).toUpperCase()===String(sym).toUpperCase()); return {s:sym, note:hit&&hit.note}; })
+                    : (s.top||[])
+                  ).map((it,i)=>(
                   <span key={i} className="mono" style={{fontSize:12.5,background:"var(--bg)",border:"1px solid var(--line2)",borderRadius:8,padding:"5px 10px"}}>
                     <b style={{color:"var(--bone)"}}>{it.s}</b>{it.note?<span style={{color:"var(--faint)"}}> · {it.note}</span>:null}
                   </span>))}
@@ -3278,6 +3375,16 @@ function ScanJournal({trades}){
             </div>}
           </div>);})}
       </div>
+
+      <AskCoach
+        title="Ask the coach about your scans"
+        intro="This tab knows which scanner surfaced your winners and which just burns clicks. Ask which one is actually paying, what's dragging your win rate, or which scan to trust tomorrow."
+        context={(stats&&stats.totals.scans)
+          ? `Scan-journal summary — ${stats.totals.scans} scans run, ${stats.totals.taken} turned into trades, overall win rate ${rate(stats.totals.wins,stats.totals.losses)!=null?rate(stats.totals.wins,stats.totals.losses)+"%":"n/a"}, net P&L ${fmtMoney(stats.totals.pnl)}.\nBy scanner: ${Object.entries(stats.bySrc).map(([src,b])=>`${src} — ${b.scans} scans, ${b.taken} taken, ${b.wins}W/${b.losses}L${b.taken?`, net ${fmtMoney(b.pnl)}`:""}`).join("; ")}.\nMost recent scans: ${(log||[]).slice(0,8).map(s=>`${s.source} ${new Date(s.ts).toLocaleDateString()} [${(s.syms||[]).slice(0,6).join(", ")}]`).join(" | ")}.`
+          : "No scans have been logged yet."}
+        placeholder="e.g. which scanner is actually making me money?"
+        suggestions={(stats&&stats.totals.scans)?["Which scanner is actually making me money?","What's dragging my win rate down?","Which scan should I trust most tomorrow?"]:["How will this tab help me once I start scanning?"]}
+      />
     </div>
   );
 }
@@ -3293,8 +3400,10 @@ function RunnerScan({watch}){
   const [seed,setSeed]=useState(null);
   const [minScore,setMinScore]=useState(0);
   const [chart,setChart]=useState(null);
+  const [ready,setReady]=useState(false);
 
-  useEffect(()=>{ (async()=>{ const s=await sGet("runner_scan"); if(s&&Array.isArray(s.rows)){ setRows(s.rows); setWhen(s.when||null); } })(); },[]);
+  useEffect(()=>{ (async()=>{ const s=await sGet("runner_scan"); if(s&&Array.isArray(s.rows)){ setRows(s.rows); setWhen(s.when||null); } setReady(true); })(); },[]);
+  useAutoScan(ready, when, loading, ()=>scan());
 
   async function scan(){
     if(loading) return;
@@ -3353,6 +3462,29 @@ dir="up"|"down". px=last close. atr=avg DAILY range in $ (~14d). comp/lvl/cat/fu
         {prog && <div className="mono" style={{fontSize:12.5,color:"var(--brass)",marginTop:10}}>{prog}</div>}
         {err && <div style={{fontSize:13,color:"var(--bear)",marginTop:10}}>{err}</div>}
         {when && !loading && <div className="mono" style={{fontSize:11.5,color:"var(--faint)",marginTop:10}}>Last scan {new Date(when).toLocaleString()}</div>}
+      </div>
+
+      {/* Key / legend — what every field on a runner card means. */}
+      <div className="card" style={{padding:16,marginBottom:14}}>
+        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:11}}>
+          <div className="eyebrow" style={{margin:0}}>Key — what each field means</div>
+          <Help text="A plain-language legend for every number on a runner card. Everything here is a structural read, not a prediction — confirm live prices on your own screen."/>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:"10px 20px"}}>
+          {[["Runner score","0–100 blend of the four grades (Compression · Level · Catalyst · Fuel). Higher = more of a coiled-under-a-magnet setup."],
+            ["▲ Calls / ▼ Puts","The direction the structure favors — calls for an upside break, puts for a downside break."],
+            ["Trigger","The exact price that confirms the move. No trade until price actually breaks it."],
+            ["Wrong past","The invalidation level. If price trades past this, the setup failed — get out."],
+            ["Daily range","Average daily travel in dollars (ATR). Roughly how far it moves in a day."],
+            ["IV rank","0–100, how pricey options are vs the last year. High (60+) = premium already rich, IV-crush risk."],
+            ["Chain","Option liquidity — thick / ok / thin. Thin means hard to fill and scale out cleanly."],
+            ["Catalyst","The event expected to force the break (earnings, NFP, Fed…), or 'none'."]
+          ].map(([t,d],i)=>(
+            <div key={i} style={{display:"flex",gap:9,alignItems:"flex-start"}}>
+              <span className="mono" style={{fontSize:12,fontWeight:800,color:"var(--brass)",whiteSpace:"nowrap",flex:"0 0 104px"}}>{t}</span>
+              <span style={{fontSize:12.5,color:"var(--comp)",lineHeight:1.5}}>{d}</span>
+            </div>))}
+        </div>
       </div>
 
       {rows && <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:14,alignItems:"center"}}>
@@ -3416,6 +3548,16 @@ dir="up"|"down". px=last close. atr=avg DAILY range in $ (~14d). comp/lvl/cat/fu
       </div>}
 
       <div id="tenx" style={{marginTop:18}}><TenXMath seed={seed}/></div>
+
+      <AskCoach
+        title="Ask the coach about these runners"
+        intro="Ran the scan and not sure what to do with it? Ask which candidate is cleanest, why the top pick scored highest, or which to leave alone. Grounded in your current results and your rules."
+        context={(rows&&rows.length)
+          ? "Runner scan results, best first (score is 0–100):\n"+rows.slice(0,10).map(r=>`${r.s} ${r.dir==="down"?"puts":"calls"} — score ${runnerScore(r)}${r.px?` @ $${num(r.px).toFixed(2)}`:""}${r.trig?`, trigger $${num(r.trig)}`:""}${r.inval?`, wrong past $${num(r.inval)}`:""}${r.ivr!=null?`, IV rank ${num(r.ivr)}`:""}${r.liq?`, chain ${r.liq}`:""}${r.ev&&r.ev!=="none"?`, catalyst ${r.ev}`:""}${r.why?` — ${r.why}`:""}`).join("\n")
+          : "The trader has not run a runner scan yet — no results are on screen."}
+        placeholder="e.g. which of these has the cleanest setup?"
+        suggestions={(rows&&rows.length)?["Which one has the cleanest setup?","Why did the top pick score highest?","Which of these would you skip, and why?"]:["What makes a good runner candidate?","How should I size a lottery runner?"]}
+      />
 
       <div className="card" style={{padding:18,marginTop:16,borderColor:"var(--brass-dim)"}}>
         <div className="eyebrow" style={{color:"var(--brass)",marginBottom:8}}>Before you hunt these</div>
@@ -3518,8 +3660,10 @@ function Watchlist({watch,setWatch,quotes,setQuotes}){
   const [bias,setBias]=useState({}); const [scanning,setScanning]=useState(false);
   const [scanData,setScanData]=useState(null);
   const [chartRow,setChartRow]=useState(null);
+  const [biasWhen,setBiasWhen]=useState(null); const [biasReady,setBiasReady]=useState(false);
   useEffect(()=>{ setScanData(null); },[sel]);
-  useEffect(()=>{(async()=>{ const b=await sGet("watch:bias"); if(b&&typeof b==="object") setBias(b); })();},[]);
+  useEffect(()=>{(async()=>{ const b=await sGet("watch:bias"); if(b&&typeof b==="object") setBias(b); const t=await sGet("watch:bias:t"); if(t) setBiasWhen(t); setBiasReady(true); })();},[]);
+  useAutoScan(biasReady, biasWhen, scanning, ()=>scanBias());
   async function scanBias(){
     if(scanning) return; setScanning(true); setErr("");
     try{
@@ -3529,7 +3673,7 @@ function Watchlist({watch,setWatch,quotes,setQuotes}){
       const j=extractJson(getText(data));
       if(j&&typeof j==="object"){
         const clean={}; for(const k of Object.keys(j)){ const v=String(j[k]).toLowerCase(); clean[k.toUpperCase()]= v.includes("bull")?"bullish":v.includes("bear")?"bearish":"neutral"; }
-        const merged={...bias,...clean}; setBias(merged); await sSet("watch:bias",merged); logScan("Bias scan", Object.keys(clean), Object.keys(clean).slice(0,6).map(k=>({s:k,note:clean[k]})));
+        const merged={...bias,...clean}; setBias(merged); await sSet("watch:bias",merged); const t=Date.now(); setBiasWhen(t); await sSet("watch:bias:t",t); logScan("Bias scan", Object.keys(clean), Object.keys(clean).slice(0,6).map(k=>({s:k,note:clean[k]})));
       } else setErr("Couldn't parse the scan — try again.");
     }catch(e){ setErr(aiErr(e,"Scan")); }
     setScanning(false);
@@ -3951,6 +4095,22 @@ function News({watch}){
   const [loading,setLoading]=useState(false);
   const [err,setErr]=useState("");
   const [scope,setScope]=useState("watch");
+  const [mode,setMode]=useState("free");   // free = Yahoo headlines (instant, no AI) · ai = AI wire (adds sentiment)
+
+  const ago=(ts)=>{ if(!ts) return ""; const s=Math.max(0,(Date.now()-ts)/1000); if(s<60)return"just now"; const m=s/60; if(m<60)return Math.round(m)+"m ago"; const h=m/60; if(h<24)return Math.round(h)+"h ago"; return Math.round(h/24)+"d ago"; };
+
+  async function loadFree(){
+    setLoading(true); setErr(""); setItems([]);
+    try{
+      const qs = scope==="watch" ? `symbols=${encodeURIComponent((watch||[]).join(","))}` : "market=1";
+      const r=await fetch(`/api/news?${qs}`);
+      const j=await r.json();
+      if(j&&Array.isArray(j.items)&&j.items.length) setItems(j.items.map(n=>({...n,free:true})));
+      else setErr("No headlines came back — try again, or switch to the AI wire.");
+    }catch(e){ setErr("Free feed failed. Check connection and retry."); }
+    setLoading(false);
+  }
+  const pull=()=> (mode==="free"?loadFree():load());
 
   async function load(){
     setLoading(true); setErr("");
@@ -3977,9 +4137,16 @@ function News({watch}){
       </div>
       <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14}}>
         <div className="eyebrow" style={{margin:0}}>News wire</div>
-        <Help text="Latest market-moving headlines with a bull/bear tag on each. Toggle 'My watchlist' (news on your tickers) or 'Broad market' (indices, Fed/rates, semis). Pulled live from web search — best-effort and delayed; verify anything you'd trade on."/>
+        <Help text="Latest market-moving headlines. Two sources: 'Free feed' pulls real headlines from Yahoo Finance instantly with ZERO AI cost (publisher + time, tap to open the article); 'AI wire' uses an AI web search that rewrites headlines and adds a bull/bear tag (costs one AI call). Toggle 'My watchlist' or 'Broad market' for either. Best-effort and delayed — verify anything you'd trade on."/>
       </div>
       <div style={{display:"flex",gap:8,marginBottom:16,alignItems:"center",flexWrap:"wrap"}}>
+        <div style={{display:"flex",background:"var(--bg2)",border:"1px solid var(--line)",borderRadius:9,padding:3}}>
+          {[["free","⚡ Free feed"],["ai","🧠 AI wire"]].map(([id,l])=>(
+            <button key={id} onClick={()=>{setMode(id); setItems([]); setErr("");}} className="disp"
+              style={{border:"none",padding:"7px 13px",fontSize:14,fontWeight:600,borderRadius:7,
+                background:mode===id?"var(--bg3)":"transparent",color:mode===id?"var(--brass)":"var(--dim)"}}>{l}</button>
+          ))}
+        </div>
         <div style={{display:"flex",background:"var(--bg2)",border:"1px solid var(--line)",borderRadius:9,padding:3}}>
           {[["watch","My watchlist"],["market","Broad market"]].map(([id,l])=>(
             <button key={id} onClick={()=>setScope(id)} className="disp"
@@ -3988,8 +4155,9 @@ function News({watch}){
           ))}
         </div>
         <div style={{flex:1}}/>
-        <button className="btn-primary btn" onClick={load} disabled={loading}>{loading?<span className="spin"/>:"Pull latest news"}</button>
+        <button className="btn-primary btn" onClick={pull} disabled={loading}>{loading?<span className="spin"/>:(mode==="free"?"⚡ Get headlines":"🧠 Pull latest news")}</button>
       </div>
+      <div className="mono" style={{fontSize:11.5,color:"var(--faint)",marginTop:-6,marginBottom:14}}>{mode==="free"?"Free · from Yahoo Finance · no AI tokens used":"AI web search · adds sentiment · uses one AI call"}</div>
       {err && <div style={{color:"var(--bear)",fontSize:13.5,marginBottom:10}}>{err}</div>}
 
       {items.length===0 && !loading &&
@@ -4002,11 +4170,13 @@ function News({watch}){
           <div key={i} className="card" style={{padding:15}}>
             <div style={{display:"flex",alignItems:"center",gap:9,marginBottom:6,flexWrap:"wrap"}}>
               <span className="mono" style={{fontWeight:700,fontSize:13.5,color:"var(--brass)"}}>{it.ticker||"MKT"}</span>
-              <span className="tag" style={{color:sCol(it.sentiment),borderColor:"var(--line2)"}}>{it.sentiment||"neutral"}</span>
-              <span className="mono" style={{fontSize:12,color:"var(--faint)"}}>{it.source} · {it.time}</span>
+              {!it.free && <span className="tag" style={{color:sCol(it.sentiment),borderColor:"var(--line2)"}}>{it.sentiment||"neutral"}</span>}
+              <span className="mono" style={{fontSize:12,color:"var(--faint)"}}>{it.source}{(it.time||it.ts)?" · "+(it.free?ago(it.ts):it.time):""}</span>
             </div>
-            <div className="disp" style={{fontSize:15,fontWeight:600,lineHeight:1.3,marginBottom:5}}>{it.headline}</div>
-            <div style={{fontSize:14.5,color:"var(--dim)",lineHeight:1.5}}>{it.summary}</div>
+            {it.free && it.link
+              ? <a href={it.link} target="_blank" rel="noopener" className="disp" style={{fontSize:15,fontWeight:600,lineHeight:1.3,color:"var(--bone)",textDecoration:"none",display:"block"}}>{it.headline} <span style={{color:"var(--focus)",fontSize:13}}>↗</span></a>
+              : <div className="disp" style={{fontSize:15,fontWeight:600,lineHeight:1.3,marginBottom:5}}>{it.headline}</div>}
+            {it.summary && <div style={{fontSize:14.5,color:"var(--dim)",lineHeight:1.5,marginTop:5}}>{it.summary}</div>}
           </div>
         ))}
       </div>
@@ -4642,7 +4812,24 @@ function DaySwingCard(){
   );
 }
 
-const LIB_TYPES=[["Video","▶","#E8756A"],["Article","▤","#6FA8DC"],["Note","✎","#E3A857"],["Chart","📈","#3FB782"]];
+const LIB_TYPES=[["Video","▶","#E8756A"],["Playlist","≣","#B084E9"],["Article","▤","#6FA8DC"],["Note","✎","#E3A857"],["Chart","📈","#3FB782"],["Watchlist","★","#F2BE6E"],["Tool","🔧","#8FB0FF"]];
+/* Links seeded into the library. Bump LIBRARY_SEED_VER when you add entries so
+   they merge in for people who already loaded an earlier seed (never duplicated
+   — matched by URL — and their own deletions/renames are left untouched). */
+const LIBRARY_SEED_VER=3;
+const LIBRARY_SEED=[
+  {url:"https://youtu.be/QVlQ5jfA4kY", type:"Video", title:"Study video 1"},
+  {url:"https://youtu.be/yXELw6fwTa0", type:"Video", title:"Study video 2"},
+  {url:"https://youtu.be/kUD6FT0n5Qk", type:"Video", title:"Study video 3"},
+  {url:"https://youtu.be/fELzjrW-Ga8", type:"Video", title:"Study video 4"},
+  {url:"https://youtube.com/playlist?list=PLtFWwLzLEJBovPO8knmLNUQXYjZdiWc3u", type:"Playlist", title:"Study playlist 1"},
+  {url:"https://youtube.com/playlist?list=PLoOwDUfJHOPCvUhRARFX0HjUOgULiyTuy", type:"Playlist", title:"Study playlist 2"},
+  {url:"https://www.tradingview.com/x/zpWZ4G0K/", type:"Chart", title:"Chart snapshot 1"},
+  {url:"https://www.tradingview.com/x/LzJa5Eqa/", type:"Chart", title:"Chart snapshot 2"},
+  {url:"https://www.tradingview.com/watchlists/163482724/", type:"Watchlist", title:"My TradingView watchlist"},
+  {url:"https://finviz.com/", type:"Tool", title:"Finviz — screener, heat-map & news", notes:"Free stock screener, sector heat-map, and news aggregator. Filter the whole market by your criteria (float, relative volume, gap %, sector, performance), read the S&P heat-map to see where money is rotating, and skim aggregated headlines. A fast pre-filter to build a watchlist BEFORE you spend AI calls on the deeper scans."},
+  {url:"https://stockmarketwatch.com/", type:"Tool", title:"Stock Market Watch — live futures & headlines", notes:"One page with real-time index futures, the economic-events calendar, and a fast-scrolling headline ticker. Good pre-market glance for where futures and the calendar sit before the open. (Your in-app News tab pulls its free feed from Yahoo, not this site.)"},
+].map((s,i)=>({ id:"seed-"+i, notes:"", img:null, ts:0, ...s }));
 function libColor(t){ const f=LIB_TYPES.find(x=>x[0]===t); return f?f[2]:"#8792A0"; }
 function libIcon(t){ const f=LIB_TYPES.find(x=>x[0]===t); return f?f[1]:"•"; }
 function KnowledgeLibrary(){
@@ -4651,10 +4838,25 @@ function KnowledgeLibrary(){
   const [draft,setDraft]=useState({title:"",type:"Video",url:"",notes:""});
   const [img,setImg]=useState(null);
   const [busy,setBusy]=useState(false);
+  const [editId,setEditId]=useState(null);
   const fileRef=useRef(null);
-  useEffect(()=>{(async()=>{ const l=await sGet("library:items"); if(Array.isArray(l)) setItems(l); setReady(true); })();},[]);
+  useEffect(()=>{(async()=>{
+    let l=await sGet("library:items"); if(!Array.isArray(l)) l=[];
+    // Merge any seed links this browser hasn't seen yet (matched by URL so nothing
+    // duplicates); the trader's own deletions and renames are never overwritten.
+    const ver=(await sGet("library:seedVer"))||0;
+    if(ver < LIBRARY_SEED_VER){
+      const have=new Set(l.map(i=>String(i.url||"").trim()));
+      const add=LIBRARY_SEED.filter(s=>s.url && !have.has(s.url));
+      if(add.length) l=[...add, ...l];
+      await sSet("library:items", l);
+      await sSet("library:seedVer", LIBRARY_SEED_VER);
+    }
+    setItems(l); setReady(true);
+  })();},[]);
   useEffect(()=>{ if(ready) sSet("library:items",items); },[items,ready]);
   const set=(k,v)=>setDraft(d=>({...d,[k]:v}));
+  const update=(id,patch)=>setItems(x=>x.map(i=>i.id===id?{...i,...patch}:i));
   async function pick(e){ const f=(e.target.files||[])[0]; if(!f) return; setBusy(true); try{ const t=await fileToThumb(f); setImg(t); }catch(_){}; setBusy(false); if(fileRef.current) fileRef.current.value=""; }
   function add(){
     if(!draft.title.trim() && !draft.url.trim() && !img) return;
@@ -4699,13 +4901,22 @@ function KnowledgeLibrary(){
                   {it.img && <img src={it.img} alt="" style={{width:60,height:60,objectFit:"cover",borderRadius:8,border:"1px solid var(--line2)",flexShrink:0}}/>}
                   <div style={{flex:1,minWidth:0}}>
                     <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-                      <span className="mono" style={{fontSize:11.5,fontWeight:700,color:libColor(it.type),border:"1px solid var(--line2)",borderRadius:5,padding:"2px 7px"}}>{libIcon(it.type)} {it.type}</span>
-                      <span className="disp" style={{fontSize:15.5,fontWeight:700,color:"var(--bone)"}}>{it.title}</span>
+                      {editId===it.id
+                        ? <select value={it.type} onChange={e=>update(it.id,{type:e.target.value})} style={{...fld,width:"auto",appearance:"auto",fontSize:12.5,padding:"3px 7px",color:libColor(it.type),fontWeight:700}}>{LIB_TYPES.map(([t])=><option key={t} value={t}>{t}</option>)}</select>
+                        : <span className="mono" style={{fontSize:11.5,fontWeight:700,color:libColor(it.type),border:"1px solid var(--line2)",borderRadius:5,padding:"2px 7px"}}>{libIcon(it.type)} {it.type}</span>}
+                      {editId===it.id
+                        ? <input autoFocus value={it.title} onChange={e=>update(it.id,{title:e.target.value})} onKeyDown={e=>{if(e.key==="Enter")setEditId(null);}} placeholder="Title" style={{...fld,flex:"1 1 180px",fontSize:14,padding:"5px 9px"}}/>
+                        : <span className="disp" style={{fontSize:15.5,fontWeight:700,color:"var(--bone)"}}>{it.title}</span>}
                     </div>
-                    {it.notes && <div style={{fontSize:14,color:"var(--dim)",marginTop:6,lineHeight:1.5}}>{it.notes}</div>}
-                    {it.url && <a href={it.url} target="_blank" rel="noopener" className="mono" style={{display:"inline-block",marginTop:8,fontSize:13,fontWeight:600,color:"var(--focus)",textDecoration:"none"}}>{it.type==="Video"?"▶ Watch":"Open"} ↗</a>}
+                    {editId===it.id
+                      ? <textarea rows={2} value={it.notes} onChange={e=>update(it.id,{notes:e.target.value})} placeholder="Your notes / takeaways" style={{...fld,resize:"vertical",marginTop:8,fontSize:13.5,padding:"7px 9px"}}/>
+                      : (it.notes && <div style={{fontSize:14,color:"var(--dim)",marginTop:6,lineHeight:1.5}}>{it.notes}</div>)}
+                    {it.url && <a href={it.url} target="_blank" rel="noopener" className="mono" style={{display:"inline-block",marginTop:8,fontSize:13,fontWeight:600,color:"var(--focus)",textDecoration:"none"}}>{it.type==="Video"||it.type==="Playlist"?"▶ Watch":it.type==="Watchlist"?"★ Open watchlist":"Open"} ↗</a>}
                   </div>
-                  <button onClick={()=>del(it.id)} style={{background:"none",border:"none",color:"var(--faint)",fontSize:16,cursor:"pointer",padding:2}} title="Delete">×</button>
+                  <div style={{display:"flex",flexDirection:"column",gap:4}}>
+                    <button onClick={()=>setEditId(editId===it.id?null:it.id)} style={{background:"none",border:"none",color:editId===it.id?"var(--brass)":"var(--faint)",fontSize:14,cursor:"pointer",padding:2}} title={editId===it.id?"Done":"Rename"}>{editId===it.id?"✓":"✎"}</button>
+                    <button onClick={()=>del(it.id)} style={{background:"none",border:"none",color:"var(--faint)",fontSize:16,cursor:"pointer",padding:2}} title="Delete">×</button>
+                  </div>
                 </div>
               </div>
             ))}
@@ -4807,7 +5018,6 @@ function Playbook(){
   return (
     <div style={{display:"flex",flexDirection:"column",gap:18}}>
       <FirstSteps/>
-      <KnowledgeLibrary/>
       <StudyList/>
       <OptionsPlaybook/>
       <EntryExitDiagram/>
