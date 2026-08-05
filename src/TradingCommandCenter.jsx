@@ -494,7 +494,7 @@ export default function TradingCommandCenter(){
   useEffect(()=>{ if(loaded) sSet("watchlist:tickers",watch); },[watch,loaded]);
   useEffect(()=>{ if(loaded && Object.keys(quotes).length) sSet("quotes:last",quotes); },[quotes,loaded]);
 
-  const TABS=[["guide","Guide"],["today","Today"],["dash","Dashboard"],["journal","Journal"],["review","Review"],["watch","Watchlist"],["strat","Strat"],["runner","Runner"],["scans","Scans"],["sectors","Sectors"],["tools","Tools"],["pl","P/L"],["news","News"],["play","Playbook"],["test","Test"],["library","Library"],["tutor","Tutor"]];
+  const TABS=[["guide","Guide"],["today","Today"],["dash","Dashboard"],["journal","Journal"],["review","Review"],["watch","Watchlist"],["strat","Strat"],["runner","Runner"],["scans","Scans"],["sectors","Sectors"],["tools","Tools"],["pl","P/L"],["news","News"],["play","Playbook"],["library","Library"],["tutor","Tutor"]];
 
   return (
     <HelpCtx.Provider value={showHelp}>
@@ -552,7 +552,6 @@ export default function TradingCommandCenter(){
         {tab==="pl" && <PayoffLab />}
         {tab==="news" && <News watch={watch} />}
         {tab==="play" && <Playbook />}
-        {tab==="test" && <TestZone />}
         {tab==="library" && <KnowledgeLibrary />}
         {tab==="tutor" && <Tutor trades={trades} />}
       </div>
@@ -1327,8 +1326,8 @@ function Guide(){
       </div>
 
       <div>
-        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}><div><div className="eyebrow" style={{marginBottom:4}}>Reference</div><h3 className="disp" style={{margin:0,fontSize:19,fontWeight:700}}>Glossary &amp; Test moved to the Playbook</h3></div></div>
-        <p style={{margin:"8px 0 0",fontSize:14,color:"var(--dim)",lineHeight:1.6}}>The full illustrated glossary — every term with a diagram — now lives in the <b style={{color:"var(--brass)"}}>Playbook</b> tab, next to the new <b style={{color:"var(--brass)"}}>Test</b> that quizzes you from the basics up and grades you. Head there to study and drill.</p>
+        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}><div><div className="eyebrow" style={{marginBottom:4}}>Reference &amp; learning</div><h3 className="disp" style={{margin:0,fontSize:19,fontWeight:700}}>Where to study</h3></div></div>
+        <p style={{margin:"8px 0 0",fontSize:14,color:"var(--dim)",lineHeight:1.6}}>The full illustrated glossary — every term with a diagram — lives in the <b style={{color:"var(--brass)"}}>Playbook</b> tab. To learn it start to finish, go to the <b style={{color:"var(--brass)"}}>Tutor</b> tab: a 10-lesson course where each lesson is followed by its own test that grades you and tracks your progress.</p>
       </div>
     </div>
   );
@@ -4375,9 +4374,182 @@ function TeachCoach(){
   );
 }
 
+/* ---------- Course: sequential lessons, each with its own test ---------- */
+const LESSONS=[
+  {n:1,title:"The bars — Strat foundations",blurb:"How every candle reads against the one before it: inside, 2-up, 2-down, outside.",cats:["Bar types"]},
+  {n:2,title:"Actionable signals",blurb:"The bar combinations worth trading — 2-1-2, 3-1-2, 1-2-2, failed 2s.",cats:["Actionable signals"]},
+  {n:3,title:"Continuity & FTFC",blurb:"Full-timeframe continuity and the environment you enter into.",cats:["Strat continuity scans","FTFC & structure"]},
+  {n:4,title:"Market structure & liquidity",blurb:"Swings, HH/HL, BOS, CHoCH, and where the stops rest.",cats:["Market structure"]},
+  {n:5,title:"How price is engineered — ICT",blurb:"Market-maker models, fair-value gaps, order blocks, OTE, premium/discount.",cats:["Market-maker models · ICT"]},
+  {n:6,title:"Triggers, pivots & your risk system",blurb:"Where you get in, where you're wrong, and how you size it.",cats:["Triggers & pivots","Your risk system"]},
+  {n:7,title:"The Greeks",blurb:"Delta, gamma, theta, vega — what moves your contract besides direction.",cats:["Options Greeks"]},
+  {n:8,title:"Options risk & pricing",blurb:"IV, IV crush, expected move, moneyness, and the chain you fill on.",cats:["Options risk & terms","Options pricing & execution"]},
+  {n:9,title:"Money, journal & discipline",blurb:"Sizing off the stop, R-multiples, and the numbers that measure you.",cats:["Money management","Journal metrics"]},
+  {n:10,title:"Trend tools & the open",blurb:"EMAs, VWAP, ORB, pivots, volume, and the overnight futures tone.",cats:["Moving averages, VWAP & trend tools","Pivot indicators & horizon","Reading volume","Futures & the open"]},
+];
+function lessonItems(les){ const set=new Set(les.cats); const out=[]; GLOSSARY.forEach(g=>{ if(set.has(g.cat)) g.items.forEach(it=>out.push({term:it.term,def:it.def,cat:g.cat,dia:it.dia})); }); return out; }
+function questionsFrom(items,n){
+  const allT=testBank(0);
+  return tShuffle(items).slice(0,n).map(t=>{
+    let d=tShuffle(allT.filter(x=>x.cat===t.cat&&x.term!==t.term)).slice(0,3).map(x=>x.term);
+    if(d.length<3) d=d.concat(tShuffle(allT.filter(x=>x.term!==t.term&&!d.includes(x.term))).slice(0,3-d.length).map(x=>x.term));
+    return {prompt:stripHtml(t.def), answer:t.term, options:tShuffle([t.term,...d.slice(0,3)]), cat:t.cat, dia:t.dia};
+  });
+}
+function Quiz({questions,onDone}){
+  const [i,setI]=useState(0), [picked,setPicked]=useState(null), [answers,setAnswers]=useState([]);
+  const q=questions[i]; if(!q) return null;
+  const score=answers.filter(a=>a&&a.correct).length;
+  const btn={border:"1px solid var(--line2)",background:"var(--bg)",color:"var(--bone)",borderRadius:10,padding:"12px 14px",fontSize:15,cursor:"pointer",textAlign:"left",fontFamily:"inherit",width:"100%",display:"flex",alignItems:"center",gap:10};
+  function choose(opt){ if(picked!=null)return; setPicked(opt); setAnswers(a=>{ const c=a.slice(); c[i]={correct:opt===q.answer,term:q.answer,dia:q.dia,prompt:q.prompt}; return c; }); }
+  function next(){ if(i+1<questions.length){ setI(i+1); setPicked(null); } else { const arr=answers.slice(); onDone(arr.filter(a=>a&&a.correct).length, questions.length, arr.filter(a=>a&&!a.correct)); } }
+  return (
+    <div>
+      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
+        <span className="eyebrow">Q{i+1} of {questions.length}</span>
+        <span className="mono" style={{marginLeft:"auto",fontSize:13,color:"var(--brass)"}}>Score {score}/{answers.filter(Boolean).length}</span>
+      </div>
+      <div style={{height:5,background:"var(--bg3)",borderRadius:3,marginBottom:14,overflow:"hidden"}}><div style={{height:"100%",width:`${(i/questions.length)*100}%`,background:"var(--brass)"}}/></div>
+      <div className="card" style={{padding:18,marginBottom:12}}>
+        <div className="eyebrow" style={{marginBottom:8}}>Which term is this?</div>
+        <div style={{fontSize:16,color:"var(--bone)",lineHeight:1.55,fontWeight:500}}>{q.prompt}</div>
+      </div>
+      <div style={{display:"flex",flexDirection:"column",gap:9}}>
+        {q.options.map((opt,k)=>{ const isAns=opt===q.answer,isP=opt===picked,show=picked!=null;
+          const bc=show&&isAns?"var(--bull)":show&&isP&&!isAns?"var(--bear)":"var(--line2)";
+          const bg=show&&isAns?"rgba(63,183,130,0.10)":show&&isP&&!isAns?"rgba(231,106,91,0.10)":"var(--bg)";
+          return (<button key={k} onClick={()=>choose(opt)} disabled={show} style={{...btn,borderColor:bc,background:bg,cursor:show?"default":"pointer"}}>
+            <span className="mono" style={{fontSize:12,color:"var(--faint)"}}>{String.fromCharCode(65+k)}</span>
+            <span style={{fontSize:15,fontWeight:600,color:show&&isAns?"var(--bull)":"var(--bone)"}}>{opt}</span>
+            {show&&isAns&&<span style={{marginLeft:"auto",color:"var(--bull)"}}>✓</span>}
+            {show&&isP&&!isAns&&<span style={{marginLeft:"auto",color:"var(--bear)"}}>✗</span>}
+          </button>);
+        })}
+      </div>
+      {picked!=null && <div className="card" style={{padding:15,marginTop:12,borderColor:picked===q.answer?"var(--bull)":"var(--bear)"}}>
+        <div style={{fontSize:14,fontWeight:700,color:picked===q.answer?"var(--bull)":"var(--bear)",marginBottom:6}}>{picked===q.answer?"Correct":`It's ${q.answer}`}</div>
+        <div style={{fontSize:14,color:"var(--dim)",lineHeight:1.5}}>{q.prompt}</div>
+        {q.dia && <StratDia kind={q.dia}/>}
+        <button className="btn btn-primary" onClick={next} style={{marginTop:12,padding:"9px 16px"}}>{i+1<questions.length?"Next →":"Finish →"}</button>
+      </div>}
+    </div>
+  );
+}
+function Curriculum(){
+  const [view,setView]=useState("index");   // index | lesson | test | result
+  const [cur,setCur]=useState(0);
+  const [prog,setProg]=useState({read:{},scores:{}});
+  const [quizQs,setQuizQs]=useState([]);
+  const [result,setResult]=useState(null);
+  useEffect(()=>{ (async()=>{ const p=await sGet("course:progress"); if(p&&p.read) setProg({read:p.read||{},scores:p.scores||{}}); })(); },[]);
+  const save=p=>{ setProg(p); sSet("course:progress",p); };
+  const openLesson=k=>{ setCur(k); save({...prog,read:{...prog.read,[LESSONS[k].n]:true}}); setView("lesson"); };
+  const openTest=k=>{ setCur(k); const it=lessonItems(LESSONS[k]); setQuizQs(questionsFrom(it,Math.min(10,it.length))); setResult(null); setView("test"); };
+  const onDone=(score,total,missed)=>{ const pct=Math.round(score/total*100); const key=LESSONS[cur].n; save({...prog,scores:{...prog.scores,[key]:Math.max(prog.scores[key]||0,pct)}}); setResult({score,total,pct,missed}); setView("result"); };
+  const doneCount=LESSONS.filter(l=>prog.scores[l.n]!=null).length;
+
+  if(view==="lesson"){ const les=LESSONS[cur], items=lessonItems(les);
+    return (
+      <div>
+        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14,flexWrap:"wrap"}}>
+          <button className="btn" onClick={()=>setView("index")} style={{padding:"6px 12px",fontSize:12.5}}>← All lessons</button>
+          <span className="eyebrow">Lesson {les.n} of {LESSONS.length}</span>
+        </div>
+        <div className="card" style={{padding:20,marginBottom:16}}>
+          <div className="eyebrow" style={{marginBottom:5}}>Lesson {les.n}</div>
+          <div className="disp" style={{fontSize:24,fontWeight:800,marginBottom:7}}>{les.title}</div>
+          <div style={{fontSize:14,color:"var(--dim)",lineHeight:1.6}}>{les.blurb}</div>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(300px,1fr))",gap:14,marginBottom:16}}>
+          {items.map((it,j)=>(
+            <div key={j} className="card" style={{padding:"15px 17px"}}>
+              <div className="gloss-term" style={{marginBottom:5}}>{it.term}</div>
+              <div className="gloss-def" dangerouslySetInnerHTML={{__html:it.def}}/>
+              {it.dia && <StratDia kind={it.dia}/>}
+            </div>))}
+        </div>
+        <div style={{display:"flex",gap:9,flexWrap:"wrap"}}>
+          <button className="btn btn-primary" onClick={()=>openTest(cur)} style={{padding:"11px 18px",fontSize:15}}>Take the Lesson {les.n} test →</button>
+          {cur+1<LESSONS.length && <button className="btn" onClick={()=>openLesson(cur+1)} style={{padding:"11px 18px",fontSize:15}}>Skip to Lesson {les.n+1} →</button>}
+        </div>
+      </div>
+    );
+  }
+  if(view==="test"){ const les=LESSONS[cur];
+    return (
+      <div>
+        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14,flexWrap:"wrap"}}>
+          <button className="btn" onClick={()=>setView("index")} style={{padding:"6px 12px",fontSize:12.5}}>← All lessons</button>
+          <button className="btn" onClick={()=>openLesson(cur)} style={{padding:"6px 12px",fontSize:12.5}}>Re-read lesson</button>
+          <span className="eyebrow">Lesson {les.n} test · {les.title}</span>
+        </div>
+        <Quiz key={les.n+"-"+quizQs.length} questions={quizQs} onDone={onDone}/>
+      </div>
+    );
+  }
+  if(view==="result"){ const les=LESSONS[cur], [gr,gc]=testGrade(result.pct);
+    return (
+      <div>
+        <div className="card" style={{padding:24,marginBottom:16,textAlign:"center"}}>
+          <div className="eyebrow" style={{marginBottom:6}}>Lesson {les.n} test · complete</div>
+          <div className="mono" style={{fontSize:56,fontWeight:800,lineHeight:1,color:gc}}>{gr}</div>
+          <div className="mono" style={{fontSize:19,fontWeight:800,marginTop:6}}>{result.score}/{result.total} · {result.pct}%</div>
+          <div style={{display:"flex",gap:9,justifyContent:"center",marginTop:16,flexWrap:"wrap"}}>
+            <button className="btn btn-primary" onClick={()=>openTest(cur)} style={{padding:"9px 16px"}}>↻ Retake</button>
+            <button className="btn" onClick={()=>openLesson(cur)} style={{padding:"9px 16px"}}>Re-read lesson</button>
+            {cur+1<LESSONS.length
+              ? <button className="btn" onClick={()=>openLesson(cur+1)} style={{padding:"9px 16px",borderColor:"var(--brass)",color:"var(--brass)"}}>Next: Lesson {les.n+1} →</button>
+              : <button className="btn" onClick={()=>setView("index")} style={{padding:"9px 16px"}}>Back to lessons</button>}
+          </div>
+        </div>
+        {result.missed.length>0 && <div className="card" style={{padding:18}}>
+          <div className="eyebrow" style={{marginBottom:10}}>Review these</div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))",gap:14}}>
+            {result.missed.map((a,k)=>(<div key={k} style={{padding:13,background:"var(--bg)",border:"1px solid var(--line)",borderRadius:11}}>
+              <div className="gloss-term" style={{marginBottom:5}}>{a.term}</div>
+              <div style={{fontSize:13.5,color:"var(--comp)",lineHeight:1.5}}>{a.prompt}</div>
+              {a.dia && <StratDia kind={a.dia}/>}
+            </div>))}
+          </div>
+        </div>}
+      </div>
+    );
+  }
+  // ---- INDEX ----
+  return (
+    <div>
+      <div className="card" style={{padding:20,marginBottom:16}}>
+        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:5}}><div className="eyebrow" style={{margin:0}}>The course</div><Help text="Ten lessons in order, each with its own test. Read a lesson (every concept shown with its diagram), then take the test on it — you're graded and shown what to review. Both the lesson and its test stay here for reference. Your best score per lesson is saved."/></div>
+        <div className="disp" style={{fontSize:25,fontWeight:800,marginBottom:8}}>Learn it start to finish</div>
+        <div style={{fontSize:14,color:"var(--dim)",lineHeight:1.65,marginBottom:12}}>Work through the lessons in order. Read the lesson, then take its test. Both stay linked here so you can come back to any lesson or retake any test.</div>
+        <div style={{height:7,background:"var(--bg3)",borderRadius:5,overflow:"hidden"}}><div style={{height:"100%",width:`${doneCount/LESSONS.length*100}%`,background:"var(--brass)"}}/></div>
+        <div className="mono" style={{fontSize:12.5,color:"var(--faint)",marginTop:7}}>{doneCount} of {LESSONS.length} lessons tested</div>
+      </div>
+      <div style={{display:"flex",flexDirection:"column",gap:9}}>
+        {LESSONS.map((l,k)=>{ const read=prog.read[l.n], sc=prog.scores[l.n];
+          return (
+          <div key={l.n} className="card" style={{padding:"13px 15px",display:"flex",alignItems:"center",gap:13,flexWrap:"wrap"}}>
+            <div className="mono" style={{fontSize:15,fontWeight:800,color:sc!=null?testGrade(sc)[1]:"var(--faint)",width:30,textAlign:"center",flexShrink:0}}>{sc!=null?testGrade(sc)[0]:l.n}</div>
+            <div style={{flex:"1 1 200px",minWidth:0}}>
+              <div className="disp" style={{fontSize:16,fontWeight:700,color:"var(--bone)"}}>Lesson {l.n}: {l.title}</div>
+              <div style={{fontSize:12.5,color:"var(--dim)",lineHeight:1.45,marginTop:2}}>{l.blurb}</div>
+            </div>
+            {sc!=null && <span className="mono" style={{fontSize:12.5,color:testGrade(sc)[1]}}>best {sc}%</span>}
+            {read && sc==null && <span className="mono" style={{fontSize:12,color:"var(--faint)"}}>read</span>}
+            <div style={{display:"flex",gap:7}}>
+              <button className="btn" onClick={()=>openLesson(k)} style={{padding:"7px 13px",fontSize:13}}>Lesson</button>
+              <button className="btn btn-primary" onClick={()=>openTest(k)} style={{padding:"7px 13px",fontSize:13}}>Test</button>
+            </div>
+          </div>);
+        })}
+      </div>
+    </div>
+  );
+}
 function Tutor({trades}){
   return (
     <div style={{display:"flex",flexDirection:"column",gap:18}}>
+      <Curriculum/>
       <ProgressCounter trades={trades}/>
       <LessonsCard/>
       <TeachCoach/>
