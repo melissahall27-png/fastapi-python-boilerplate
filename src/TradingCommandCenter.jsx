@@ -4786,8 +4786,11 @@ function DaySwingCard(){
   );
 }
 
-const LIB_TYPES=[["Video","▶","#E8756A"],["Playlist","≣","#B084E9"],["Article","▤","#6FA8DC"],["Note","✎","#E3A857"],["Chart","📈","#3FB782"],["Watchlist","★","#F2BE6E"]];
-/* Links seeded into the library on first load (once — deletions stick after). */
+const LIB_TYPES=[["Video","▶","#E8756A"],["Playlist","≣","#B084E9"],["Article","▤","#6FA8DC"],["Note","✎","#E3A857"],["Chart","📈","#3FB782"],["Watchlist","★","#F2BE6E"],["Tool","🔧","#8FB0FF"]];
+/* Links seeded into the library. Bump LIBRARY_SEED_VER when you add entries so
+   they merge in for people who already loaded an earlier seed (never duplicated
+   — matched by URL — and their own deletions/renames are left untouched). */
+const LIBRARY_SEED_VER=2;
 const LIBRARY_SEED=[
   {url:"https://youtu.be/QVlQ5jfA4kY", type:"Video", title:"Study video 1"},
   {url:"https://youtu.be/yXELw6fwTa0", type:"Video", title:"Study video 2"},
@@ -4798,6 +4801,7 @@ const LIBRARY_SEED=[
   {url:"https://www.tradingview.com/x/zpWZ4G0K/", type:"Chart", title:"Chart snapshot 1"},
   {url:"https://www.tradingview.com/x/LzJa5Eqa/", type:"Chart", title:"Chart snapshot 2"},
   {url:"https://www.tradingview.com/watchlists/163482724/", type:"Watchlist", title:"My TradingView watchlist"},
+  {url:"https://finviz.com/", type:"Tool", title:"Finviz — screener, heat-map & news", notes:"Free stock screener, sector heat-map, and news aggregator. Filter the whole market by your criteria (float, relative volume, gap %, sector, performance), read the S&P heat-map to see where money is rotating, and skim aggregated headlines. A fast pre-filter to build a watchlist BEFORE you spend AI calls on the deeper scans."},
 ].map((s,i)=>({ id:"seed-"+i, notes:"", img:null, ts:0, ...s }));
 function libColor(t){ const f=LIB_TYPES.find(x=>x[0]===t); return f?f[2]:"#8792A0"; }
 function libIcon(t){ const f=LIB_TYPES.find(x=>x[0]===t); return f?f[1]:"•"; }
@@ -4811,14 +4815,15 @@ function KnowledgeLibrary(){
   const fileRef=useRef(null);
   useEffect(()=>{(async()=>{
     let l=await sGet("library:items"); if(!Array.isArray(l)) l=[];
-    // Seed the curated links exactly once; after that the user's deletions stick.
-    const seeded=await sGet("library:seeded");
-    if(!seeded){
+    // Merge any seed links this browser hasn't seen yet (matched by URL so nothing
+    // duplicates); the trader's own deletions and renames are never overwritten.
+    const ver=(await sGet("library:seedVer"))||0;
+    if(ver < LIBRARY_SEED_VER){
       const have=new Set(l.map(i=>String(i.url||"").trim()));
       const add=LIBRARY_SEED.filter(s=>s.url && !have.has(s.url));
       if(add.length) l=[...add, ...l];
       await sSet("library:items", l);
-      await sSet("library:seeded", true);
+      await sSet("library:seedVer", LIBRARY_SEED_VER);
     }
     setItems(l); setReady(true);
   })();},[]);
