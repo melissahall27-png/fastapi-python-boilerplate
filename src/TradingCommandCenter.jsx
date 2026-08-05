@@ -3901,7 +3901,14 @@ function Watchlist({watch,setWatch,quotes,setQuotes}){
               <span className="mono" style={{fontSize:20,fontWeight:600,color:scol}}>{sq?.price!=null?Number(sq.price).toFixed(2):"—"}</span>
               <span className="mono" style={{fontSize:14.5,color:scol}}>{spct==null?"":(spct>=0?"▲ +":"▼ ")+spct.toFixed(2)+"%"}</span>
             </div>
-            <div className="mono" style={{fontSize:12,color:"var(--faint)",marginTop:3}}>{L.exchName!=="—"?L.exchName+":"+sel:"exchange auto"} · pick another ticker below</div>
+            <div className="mono" style={{fontSize:12,color:"var(--faint)",marginTop:3}}>{L.exchName!=="—"?L.exchName+":"+sel:"exchange auto"} · pick any ticker →</div>
+          </div>
+          <div style={{display:"flex",flexDirection:"column",gap:4,alignItems:"flex-end"}}>
+            <span className="eyebrow" style={{fontSize:10,margin:0}}>Pick ticker</span>
+            <select value={sel} onChange={e=>setSel(e.target.value)} title="Load any watchlist ticker here"
+              style={{fontFamily:"'JetBrains Mono',monospace",background:"var(--bg)",border:"1px solid var(--line2)",color:"var(--brass)",borderRadius:8,padding:"8px 12px",fontSize:15,fontWeight:700,appearance:"auto",cursor:"pointer",minWidth:110}}>
+              {watch.map(s=><option key={s} value={s}>{s}</option>)}
+            </select>
           </div>
         </div>
 
