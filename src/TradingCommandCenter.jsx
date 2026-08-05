@@ -3091,10 +3091,34 @@ function ScoreBar({label,v,max=25}){
 }
 
 /* ---------- the math: what the stock must actually DO ---------- */
-function TenXMath({seed}){
+function TenXMath({seed,watch}){
   const [f,setF]=useState({sym:"",spot:"",strike:"",prem:"",atr:"",dte:"",dir:"Call",budget:""});
+  const [busy,setBusy]=useState(false);
+  const [note,setNote]=useState("");
   useEffect(()=>{ if(seed&&seed._t) setF(v=>({...v,...seed})); },[seed&&seed._t]);
   const set=(k,v)=>setF(o=>({...o,[k]:v}));
+  /* Auto-fill the free, market-data fields from the ticker: current price
+     (quotes) and the average daily range / ATR over ~14 daily bars (ohlc).
+     Strike, premium and DTE stay manual — they depend on the contract you pick. */
+  async function autofill(){
+    const s=String(f.sym||"").trim().toUpperCase(); if(!s||busy) return;
+    setBusy(true); setNote("");
+    try{
+      const [qr,or_]=await Promise.all([
+        fetch(`/api/quotes?symbols=${encodeURIComponent(s)}`).then(r=>r.json()).catch(()=>null),
+        fetch(`/api/ohlc?symbol=${encodeURIComponent(s)}&interval=1d&range=1mo`).then(r=>r.json()).catch(()=>null),
+      ]);
+      const q=qr&&qr.quotes&&qr.quotes[s];
+      const bars=(or_&&Array.isArray(or_.bars))?or_.bars:[];
+      const last=bars.slice(-14);
+      const atr=last.length ? last.reduce((a,b)=>a+(b.h-b.l),0)/last.length : null;
+      const px=(q&&q.price!=null)?q.price:(bars.length?bars[bars.length-1].c:null);
+      setF(o=>({...o, sym:s, spot:px!=null?String(Math.round(px*100)/100):o.spot, atr:atr!=null?String(Math.round(atr*100)/100):o.atr }));
+      if(px!=null||atr!=null) setNote(`${s}${px!=null?` @ $${(Math.round(px*100)/100).toFixed(2)}`:""}${atr!=null?` · range $${(Math.round(atr*100)/100).toFixed(2)}`:""}`);
+      else setNote("No data — enter the numbers manually.");
+    }catch(e){ setNote("Couldn't fetch — enter manually."); }
+    setBusy(false);
+  }
 
   const spot=num(f.spot),strike=num(f.strike),prem=num(f.prem),atr=num(f.atr),budget=num(f.budget);
   const isCall=f.dir==="Call";
@@ -3124,7 +3148,11 @@ function TenXMath({seed}){
       </div>
 
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(115px,1fr))",gap:10,marginBottom:14}}>
-        {inp("Ticker","sym","GOOGL",false)}
+        <div>
+          <div style={{fontSize:11.5,color:"var(--faint)",marginBottom:4,fontFamily:"'JetBrains Mono',monospace",textTransform:"uppercase",letterSpacing:"0.1em"}}>Ticker</div>
+          <input list="tenx-tickers" value={f.sym} onChange={e=>set("sym",e.target.value)} onBlur={autofill} onKeyDown={e=>{ if(e.key==="Enter") autofill(); }} placeholder="GOOGL" style={{padding:"9px 11px",fontSize:14,width:"100%"}}/>
+          <datalist id="tenx-tickers">{(watch||[]).map(s=><option key={s} value={s}/>)}</datalist>
+        </div>
         <div>
           <div style={{fontSize:11.5,color:"var(--faint)",marginBottom:4,fontFamily:"'JetBrains Mono',monospace",textTransform:"uppercase",letterSpacing:"0.1em"}}>Side</div>
           <select value={f.dir} onChange={e=>set("dir",e.target.value)} style={{padding:"9px 11px",fontSize:14}}><option>Call</option><option>Put</option></select>
@@ -3137,7 +3165,11 @@ function TenXMath({seed}){
         {inp("Risk budget $","budget","300")}
       </div>
 
-      {!ready && <div style={{fontSize:13,color:"var(--faint)",padding:"10px 0"}}>Fill in stock price, strike and premium to run it.</div>}
+      <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",padding:"2px 0 10px"}}>
+        <button className="btn" onClick={autofill} disabled={busy||!String(f.sym||"").trim()} style={{padding:"7px 12px",fontSize:12.5}}>{busy?<span className="spin"/>:"⚡ Auto-fill price & range"}</button>
+        <span className="mono" style={{fontSize:12,color:note?"var(--brass)":"var(--faint)"}}>{note||"Type a ticker — stock price & daily range fill in automatically. Strike, premium & DTE are the contract you choose."}</span>
+      </div>
+      {!ready && <div style={{fontSize:13,color:"var(--faint)",padding:"2px 0 10px"}}>Now add strike, premium and DTE to run the math.</div>}
 
       {ready && <>
         <div style={{display:"flex",gap:14,flexWrap:"wrap",fontSize:12.5,color:"var(--dim)",marginBottom:14,fontFamily:"'JetBrains Mono',monospace"}}>
@@ -3655,7 +3687,7 @@ dir="up"|"down". px=last close. atr=avg DAILY range in $ (~14d). comp/lvl/cat/fu
         Nothing cleared that score. That's information too — on a lot of days there is no runner, and the discipline is to sit out rather than force one.
       </div>}
 
-      <div id="tenx" style={{marginTop:18}}><TenXMath seed={seed}/></div>
+      <div id="tenx" style={{marginTop:18}}><TenXMath seed={seed} watch={watch}/></div>
 
       <AskCoach
         title="Ask the coach about these runners"
