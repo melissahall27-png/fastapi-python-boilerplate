@@ -1988,6 +1988,50 @@ function RunnersToWatch({goRunner,onChart}){
   );
 }
 
+/* Auto-loading watchlist news — free Yahoo feed, refreshes itself, no AI cost. */
+function WatchlistNews({watch}){
+  const [items,setItems]=useState(null);
+  const [err,setErr]=useState("");
+  const [when,setWhen]=useState(null);
+  const [busy,setBusy]=useState(false);
+  const key=(watch||[]).join(",");
+  async function load(){
+    if(!key){ setItems([]); return; }
+    setBusy(true);
+    try{
+      const r=await fetch(`/api/news?symbols=${encodeURIComponent(key)}`);
+      const j=await r.json().catch(()=>null);
+      if(j&&Array.isArray(j.items)){ setItems(j.items); setWhen(Date.now()); setErr(""); }
+      else setErr("No headlines right now.");
+    }catch(e){ setErr("Couldn't load news — will retry."); }
+    setBusy(false);
+  }
+  useEffect(()=>{ load(); const id=setInterval(load, 10*60*1000); return ()=>clearInterval(id); },[key]);
+  const ago=(ts)=>{ if(!ts) return ""; const s=Math.max(0,(Date.now()-ts)/1000); if(s<60)return"just now"; const m=s/60; if(m<60)return Math.round(m)+"m ago"; const h=m/60; if(h<24)return Math.round(h)+"h ago"; return Math.round(h/24)+"d ago"; };
+  return (
+    <div className="card" style={{padding:18}}>
+      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
+        <div className="eyebrow" style={{margin:0}}>Watchlist news</div>
+        <Help text="Latest headlines for your watchlist tickers, pulled free from Yahoo Finance and refreshed automatically every 10 minutes — no AI tokens used. Tap a headline to open the article. Delayed/best-effort — verify anything you'd trade on."/>
+        <span className="mono" style={{marginLeft:"auto",fontSize:11.5,color:"var(--faint)"}}>{busy?"updating…":when?"updated "+ago(when):""}</span>
+        <button className="btn" onClick={load} disabled={busy} style={{padding:"4px 9px",fontSize:12}}>↻</button>
+      </div>
+      <div style={{fontSize:12.5,color:"var(--dim)",marginBottom:12}}>Auto-updates for {(watch||[]).slice(0,6).join(", ")}{watch&&watch.length>6?` +${watch.length-6} more`:""}. Free · no AI.</div>
+      {items===null && <div className="mono" style={{fontSize:13,color:"var(--faint)"}}>Loading headlines…</div>}
+      {items && !items.length && <div style={{fontSize:13,color:"var(--faint)"}}>{err||"No fresh headlines for your tickers right now."}</div>}
+      <div style={{display:"flex",flexDirection:"column",gap:8,maxHeight:440,overflowY:"auto"}}>
+        {(items||[]).map((it,i)=>(
+          <a key={i} href={it.link||undefined} target="_blank" rel="noopener" style={{display:"block",padding:"10px 12px",background:"var(--bg)",border:"1px solid var(--line)",borderRadius:10,textDecoration:"none"}}>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4,flexWrap:"wrap"}}>
+              <span className="mono" style={{fontWeight:700,fontSize:12.5,color:"var(--brass)"}}>{it.ticker||"MKT"}</span>
+              <span className="mono" style={{fontSize:11.5,color:"var(--faint)"}}>{it.source}{it.ts?" · "+ago(it.ts):""}</span>
+            </div>
+            <div style={{fontSize:14,fontWeight:600,color:"var(--bone)",lineHeight:1.35}}>{it.headline} <span style={{color:"var(--focus)",fontSize:12}}>↗</span></div>
+          </a>))}
+      </div>
+    </div>
+  );
+}
 function Today({trades,setTrades,watch,quotes,setQuotes,goJournal,goRunner}){
   const [brief,setBrief]=useState("");
   const [loadingB,setLoadingB]=useState(false);
@@ -2043,6 +2087,8 @@ function Today({trades,setTrades,watch,quotes,setQuotes,goJournal,goRunner}){
       </div>
 
       <div style={{marginBottom:18}}><Futures/></div>
+
+      <div style={{marginBottom:18}}><WatchlistNews watch={watch}/></div>
 
       <div style={{marginBottom:18}}><AgentActions trades={trades} watch={watch}/></div>
       <div style={{marginBottom:18}}><ExamineMulti watch={watch}/></div>
