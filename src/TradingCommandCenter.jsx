@@ -5498,6 +5498,77 @@ function VolumeCard(){
   );
 }
 
+function ExpirationCard(){
+  const forces=[
+    ["Theta","#E76A5B","Daily time decay — the rent you pay to hold. It bleeds every day and speeds up in the last ~2 weeks. On a cheap option it's almost the whole price."],
+    ["DTE","#E3A857","Days to expiration. Fewer days = faster theta and less room for the move to arrive. 0–1 DTE is a stopwatch, not an investment."],
+    ["IV crush","#7FA7D9","Implied volatility falling — after an event, or just as a name chops sideways. It quietly deflates your premium even when direction goes nowhere."],
+  ];
+  const reasons=[
+    ["Too far OTM → tiny delta","At IWM 301, a 299 put is $2 out-of-the-money. Its delta is small (~0.10–0.15), so the 2-point dip from the highs barely moved it — and it never gained a cent of real (intrinsic) value, because IWM never got below 299."],
+    ["$0.17 = all time value → pure theta","At 17 cents there is no intrinsic value at all — the entire price is time. Theta bleeds that every minute, fastest into expiration. The clock took more than the small move gave back."],
+    ["Right off the highs ≠ right on the day","IWM is still +0.23% GREEN on the day. Falling 303 → 301 is a pullback, not a net move to your strike. Your put needed IWM BELOW 299 — a real trend down — not a wiggle off the top."],
+  ];
+  return (
+    <div className="card" style={{padding:20}}>
+      <div style={{display:"flex",alignItems:"center",gap:7}}><div className="eyebrow" style={{margin:0}}>The clock</div><Help text="Three forces fight a long option besides direction: theta (daily time decay), DTE (days you have), and IV crush (volatility falling). You can be right on direction and still lose to the clock — shown here with a real trade."/></div>
+      <h3 className="disp" style={{margin:"0 0 4px",fontSize:19,fontWeight:700}}>Expiration &amp; time decay — right direction, still a loss</h3>
+      <p style={{margin:"0 0 14px",fontSize:14,color:"var(--dim)",lineHeight:1.6}}>Direction is only one of the things that must go right on a long option. The others are about <b style={{color:"var(--bone)"}}>time</b> — miss them and a move your way still bleeds.</p>
+
+      <div style={{background:"var(--bg)",border:"1px solid var(--line)",borderRadius:11,padding:"12px 14px 6px",marginBottom:16}}>
+        <div className="eyebrow" style={{marginBottom:8,fontSize:10}}>How premium melts as expiration nears</div>
+        <svg viewBox="0 0 320 122" width="100%" style={{display:"block",maxWidth:440}}>
+          <line x1="14" y1="104" x2="312" y2="104" stroke="var(--line2)" strokeWidth="1"/>
+          <line x1="14" y1="10" x2="14" y2="104" stroke="var(--line2)" strokeWidth="1"/>
+          <path d="M14,22 C120,32 182,50 230,74 C266,91 292,101 306,103" fill="none" stroke="var(--bear)" strokeWidth="2.4"/>
+          <path d="M14,22 C120,32 182,50 230,74 C266,91 292,101 306,103 L306,104 L14,104 Z" fill="var(--bear)" opacity="0.09"/>
+          <circle cx="230" cy="74" r="3.5" fill="var(--brass)"/>
+          <text x="236" y="70" fill="var(--brass)" fontSize="9" fontFamily="monospace">decay speeds up</text>
+          <text x="17" y="18" fill="var(--dim)" fontSize="9" fontFamily="monospace">premium</text>
+          <text x="17" y="118" fill="var(--faint)" fontSize="9" fontFamily="monospace">today</text>
+          <text x="246" y="118" fill="var(--faint)" fontSize="9" fontFamily="monospace">→ expiration</text>
+        </svg>
+      </div>
+
+      <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:16}}>
+        {forces.map(([k,c,d])=>(
+          <div key={k} style={{display:"flex",gap:12,padding:"12px 14px",background:"var(--bg)",border:"1px solid var(--line)",borderLeft:"3px solid "+c,borderRadius:10}}>
+            <div className="disp" style={{fontSize:14.5,fontWeight:700,color:c,minWidth:74,flexShrink:0}}>{k}</div>
+            <div style={{fontSize:14,color:"var(--dim)",lineHeight:1.5}}>{d}</div>
+          </div>))}
+      </div>
+
+      <div style={{border:"1px solid var(--brass-dim)",borderRadius:12,overflow:"hidden",marginBottom:14}}>
+        <div style={{padding:"10px 14px",background:"rgba(227,168,87,0.08)",borderBottom:"1px solid var(--brass-dim)"}}>
+          <div className="eyebrow" style={{margin:0,color:"var(--brass)"}}>Your trade · worked example</div>
+          <div className="disp" style={{fontSize:16,fontWeight:700,color:"var(--bone)",marginTop:2}}>IWM $299 put — you caught the drop and still lost ~23%</div>
+        </div>
+        <div style={{padding:"13px 14px"}}>
+          <div style={{fontSize:13.5,color:"var(--dim)",lineHeight:1.65,marginBottom:11}}>You bought a <b style={{color:"var(--bone)"}}>$299 put</b> (betting IWM down) for about <b style={{color:"var(--bone)"}}>$0.17</b>. IWM ran to ~<b style={{color:"var(--bone)"}}>303</b>, then sold off to <b style={{color:"var(--bone)"}}>301</b> — the down move <i>came</i>, the direction <i>felt</i> right. The put still bled ~<b style={{color:"var(--bear)"}}>23%</b>. Three reasons, all about time and distance:</div>
+          {reasons.map(([t,d],i)=>(
+            <div key={i} style={{display:"flex",gap:11,padding:"9px 0",borderTop:i?"1px solid var(--line)":"none"}}>
+              <span className="mono" style={{fontSize:13,fontWeight:800,color:"var(--bear)",flexShrink:0,minWidth:16}}>{i+1}</span>
+              <div><div className="disp" style={{fontSize:13.5,fontWeight:700,color:"var(--bone)",marginBottom:2}}>{t}</div><div style={{fontSize:13,color:"var(--dim)",lineHeight:1.55}}>{d}</div></div>
+            </div>))}
+          <div style={{marginTop:11,padding:"10px 12px",background:"var(--bg)",border:"1px solid var(--line)",borderRadius:9,fontSize:13,color:"var(--comp)",lineHeight:1.6}}>
+            <b style={{color:"var(--brass)"}}>The one-line why:</b> to profit, the move has to beat the <b>distance to your strike</b> PLUS the <b>theta you pay</b>. A cheap, far-OTM, short-dated put needs a big fast drop — a 2-point wiggle loses to both.
+          </div>
+        </div>
+      </div>
+
+      <div style={{padding:"12px 15px",background:"rgba(63,183,130,0.07)",border:"1px solid var(--bull)",borderRadius:11}}>
+        <div style={{fontSize:13.5,color:"var(--bone)",lineHeight:1.75}}>
+          <b style={{color:"var(--bull)"}}>The fix, next time:</b><br/>
+          • <b>Near-money strike</b> (delta 0.55–0.70) so the move actually moves your option — use the <b>Strikes to watch</b> ladder in Examine.<br/>
+          • <b>Enough DTE</b> so theta isn't your enemy — 3–5 for a day trade, 30–45 for a swing; never a $0.10–$0.20 lotto into expiration.<br/>
+          • <b>Beat the expected move</b> — check the Std-Dev / expected-move band in Tools; if your target doesn't clear it, the premium already priced the move in.<br/>
+          • <b>Cut cheap OTM fast</b> — if the move doesn't come quickly, theta wins. Don't hold hope into decay.
+        </div>
+      </div>
+      <div className="mono" style={{fontSize:11.5,color:"var(--faint)",marginTop:10,lineHeight:1.5}}>Deltas/theta here are round-number estimates to make the point — your real numbers live on the option chain.</div>
+    </div>
+  );
+}
 const FOUND_LAYERS=[
   ["Core — the base","#3FB782","One broad, cheap index fund that owns everything. 60–90% of the foundation. Boring on purpose — this is the part that quietly compounds for years."],
   ["Satellites — the tilt","#E3A857","A growth fund plus a couple individual names you believe in. Smaller slices (10–30% total). More upside, more swing — keep them small."],
