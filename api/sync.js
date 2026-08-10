@@ -67,3 +67,5 @@ export default async function handler(req, res) {
     return res.status(200).json({ ok: false, reason: "network", message: (e.message || "unknown").slice(0, 160) });
   }
 }
+
+// Redeploy marker: pick up newly-connected Upstash KV env vars (sync).
