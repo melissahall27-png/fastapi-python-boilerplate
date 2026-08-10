@@ -110,26 +110,76 @@ async function sSet(key,val){
   catch(e){ mem[key] = val; }   // private mode / quota full -> session-only
 }
 
-/* ---------- cross-device journal sync (opt-in via a private code) ----------
-   Devices sharing the same code push/pull their trades through /api/sync (a
-   cloud KV store). Trades are merged by id (union), so both devices accumulate
-   everything. Images are stripped from the pushed copy to keep it small — the
-   trade text/numbers AND screenshots sync, so an uploaded shot shows everywhere. */
+/* ---------- cross-device journal sync ----------
+   Devices sharing the same code push/pull their trades through /api/sync (a cloud
+   KV store). Trades merge by id, keeping the NEWER edit (updatedAt), so both
+   devices converge without clobbering. Screenshots sync too; only when the whole
+   blob would exceed the store's size cap are the oldest screenshots trimmed from
+   the pushed copy (see trimForSync) — and the merge never drops an image a device
+   still holds. Deletes are tracked as tombstones so they stick everywhere. */
 function mergeTradesById(a,b){
   const m=new Map();
-  for(const t of [...(a||[]),...(b||[])]){ if(t&&t.id){ const ex=m.get(t.id); if(!ex || Object.keys(t).length>=Object.keys(ex).length) m.set(t.id,t); } }
+  for(const t of [...(a||[]),...(b||[])]){
+    if(!t||!t.id) continue;
+    const ex=m.get(t.id);
+    if(!ex){ m.set(t.id,{...t}); continue; }
+    // Keep the NEWER edit (updatedAt); fall back to the richer copy for legacy
+    // trades with no timestamp. Either way, NEVER lose a screenshot either side holds.
+    const ta=t.updatedAt||0, ea=ex.updatedAt||0;
+    const win = ta!==ea ? (ta>ea?{...t}:{...ex}) : ((Object.keys(t).length>=Object.keys(ex).length)?{...t}:{...ex});
+    if(!win.img){ const keepImg=t.img||ex.img; if(keepImg) win.img=keepImg; }
+    m.set(t.id,win);
+  }
   return [...m.values()];
 }
+/* Deletes must STICK across devices. A plain union-merge would resurrect any trade
+   the other device still has, so we keep tombstones: the ids you deleted. They sync
+   too, and we filter them out of every merge — on both devices. */
+function mergeIds(a,b){ return [...new Set([...(a||[]),...(b||[])])]; }
+function applyTombstones(trades,ids){ const s=new Set(ids||[]); return (trades||[]).filter(t=>t&&!s.has(t.id)); }
 /* Automatic: all of this user's devices share one fixed key, so sync "just works"
    with no code to type. (A stored custom code still overrides, if ever set.) */
 const AUTO_SYNC_KEY="edge-room-primary";
 function getSyncCode(){ try{ return (window.localStorage.getItem(TCC_PREFIX+"sync:code")||"").trim() || AUTO_SYNC_KEY; }catch(e){ return AUTO_SYNC_KEY; } }
 async function syncPull(code){
-  try{ const r=await fetch("/api/sync?code="+encodeURIComponent(code)); const j=await r.json().catch(()=>null); return (j&&j.ok&&Array.isArray(j.trades))?{trades:j.trades,ts:j.ts}:null; }catch(e){ return null; }
+  try{ const r=await fetch("/api/sync?code="+encodeURIComponent(code)); const j=await r.json().catch(()=>null); return (j&&j.ok&&Array.isArray(j.trades))?{trades:j.trades,deleted:Array.isArray(j.deleted)?j.deleted:[],ts:j.ts}:null; }catch(e){ return null; }
 }
-async function syncPush(code,trades){
-  // Include screenshots (img) so an uploaded screenshot shows on every device too.
-  try{ const r=await fetch("/api/sync",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({code,trades:(trades||[])})}); return await r.json().catch(()=>({ok:false,reason:"bad-json"})); }catch(e){ return {ok:false,reason:"err"}; }
+// The whole journal is pushed as ONE blob the server caps at ~900k chars. Base64
+// screenshots are big, so a few of them could blow the cap and make EVERY push
+// fail — silently killing sync. Guard it here: keep all trade DATA, and if we're
+// over budget, drop screenshots from the OLDEST trades in the pushed copy until it
+// fits (those shots still live on the device that took them; the merge preserves
+// any image either side holds). Returns how many shots weren't carried.
+const SYNC_MAX=850000;
+function trimForSync(code,trades){
+  const size=a=>JSON.stringify({code,trades:a}).length;
+  let arr=(trades||[]);
+  if(size(arr)<=SYNC_MAX) return {trades:arr,dropped:0};
+  arr=arr.map(t=>({...t}));
+  let dropped=0;
+  for(let i=0;i<arr.length && size(arr)>SYNC_MAX;i++){ if(arr[i].img){ arr[i].img=null; dropped++; } }
+  while(arr.length>1 && size(arr)>SYNC_MAX){ arr.shift(); } // pathological: even text over budget
+  return {trades:arr,dropped};
+}
+async function syncPush(code,trades,deleted){
+  const {trades:payload,dropped}=trimForSync(code,trades);
+  try{ const r=await fetch("/api/sync",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({code,trades:payload,deleted:(deleted||[]).slice(-1000)})}); const j=await r.json().catch(()=>({ok:false,reason:"bad-json"})); if(j) j.dropped=dropped; return j; }catch(e){ return {ok:false,reason:"err"}; }
+}
+/* Scan log sync — its own namespace so it never touches the journal blob. The log
+   is append-only, so a union-by-id merge can only ADD scans, never lose one. */
+async function syncPullNs(code,ns){ try{ const r=await fetch("/api/sync?code="+encodeURIComponent(code)+"&ns="+encodeURIComponent(ns)); const j=await r.json().catch(()=>null); return (j&&j.ok&&Array.isArray(j.trades))?j.trades:null; }catch(e){ return null; } }
+async function syncPushNs(code,ns,items){ try{ await fetch("/api/sync",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({code,ns,trades:(items||[]).slice(0,400)})}); }catch(e){} }
+function mergeScans(a,b){ const m=new Map(); for(const s of [...(a||[]),...(b||[])]){ if(s&&s.id) m.set(s.id,s); } return [...m.values()].sort((x,y)=>(y.ts||0)-(x.ts||0)).slice(0,400); }
+async function pushScans(){ try{ const code=getSyncCode(); const local=await sGet("scan:log"); if(Array.isArray(local)) await syncPushNs(code,"scans",local); }catch(e){} }
+async function syncScans(){
+  try{
+    const code=getSyncCode(); const remote=await syncPullNs(code,"scans");
+    let local=await sGet("scan:log"); if(!Array.isArray(local)) local=[];
+    if(remote){ const merged=mergeScans(local,remote);
+      if(merged.length!==local.length){ await sSet("scan:log",merged); try{ window.dispatchEvent(new CustomEvent("tcc:scans-updated")); }catch(e){} }
+      await syncPushNs(code,"scans",merged);
+    }
+  }catch(e){}
 }
 
 /* ---------- auto-run scans ----------
@@ -421,15 +471,26 @@ export default function TradingCommandCenter(){
   const [loaded,setLoaded]=useState(false);
   const [syncMsg,setSyncMsg]=useState("");
   const pushTimer=useRef(null);
+  // Tombstones: ids of trades deleted here, so a delete sticks across devices.
+  const [deletedIds,setDeletedIds]=useState([]);
+  const deletedRef=useRef([]);
+  useEffect(()=>{ deletedRef.current=deletedIds; },[deletedIds]);
+  useEffect(()=>{ if(loaded) sSet("journal:deleted",deletedIds); },[deletedIds,loaded]);
+  function recordDelete(id){ setDeletedIds(d=>d.includes(id)?d:[...d,id].slice(-1000)); }
   // Auto-sync: no code to type. Pull+push against the fixed key and report status.
   async function syncNow(){
     const c=getSyncCode();
     setSyncMsg("Checking…");
     const remote=await syncPull(c);
-    let base=trades;
-    if(remote&&Array.isArray(remote.trades)&&remote.trades.length){ base=mergeTradesById(trades,remote.trades); setTrades(base); }
-    const res=await syncPush(c,base);
-    if(res&&res.ok) setSyncMsg("✓ Auto-sync is ON — your devices are linked. Log anywhere, it shows up everywhere.");
+    let base=trades, tomb=deletedRef.current;
+    if(remote){
+      tomb=mergeIds(tomb,remote.deleted); if(tomb.length!==deletedRef.current.length) setDeletedIds(tomb);
+      if(Array.isArray(remote.trades)&&remote.trades.length){ base=applyTombstones(mergeTradesById(trades,remote.trades),tomb); setTrades(base); }
+    }
+    const res=await syncPush(c,base,tomb);
+    if(res&&res.ok) setSyncMsg(res.dropped>0
+      ? `✓ Auto-sync is ON — trades are linked across devices. (${res.dropped} older screenshot${res.dropped>1?"s":""} stay on the device that took ${res.dropped>1?"them":"it"} to keep sync fast.)`
+      : "✓ Auto-sync is ON — your devices are linked. Log anywhere, it shows up everywhere.");
     else if(res&&res.reason==="not-configured") setSyncMsg("Auto-sync is ready — it just needs the one-time storage box connected on Vercel (ask me in chat, ~2 clicks).");
     else setSyncMsg("Couldn't reach the cloud store yet — check the storage setup.");
   }
@@ -439,13 +500,17 @@ export default function TradingCommandCenter(){
   useEffect(()=>{
     if(!loaded) return; const c=getSyncCode();
     if(pushTimer.current) clearTimeout(pushTimer.current);
-    pushTimer.current=setTimeout(()=>{ syncPush(c,trades); }, 1500);
+    pushTimer.current=setTimeout(()=>{ syncPush(c,trades,deletedRef.current); }, 1500);
     return ()=>{ if(pushTimer.current) clearTimeout(pushTimer.current); };
-  },[trades,loaded]);
-  // Pull the other device's trades every 45s and merge them in.
+  },[trades,deletedIds,loaded]);
+  // Pull the other device's trades every 45s, merge them, and honor tombstones.
   useEffect(()=>{
     if(!loaded) return; const c=getSyncCode();
-    const id=setInterval(async()=>{ const remote=await syncPull(c); if(remote&&Array.isArray(remote.trades)){ setTrades(prev=>{ const merged=mergeTradesById(prev,remote.trades); return merged.length!==prev.length? merged: prev; }); } }, 45000);
+    const id=setInterval(async()=>{ syncScans(); const remote=await syncPull(c); if(!remote) return;
+      const tomb=mergeIds(deletedRef.current,remote.deleted);
+      if(tomb.length!==deletedRef.current.length) setDeletedIds(tomb);
+      if(Array.isArray(remote.trades)){ setTrades(prev=>{ const merged=applyTombstones(mergeTradesById(prev,remote.trades),tomb); return (merged.length!==prev.length || tomb.length!==deletedRef.current.length)? merged: prev; }); }
+    }, 45000);
     return ()=>clearInterval(id);
   },[loaded]);
   const [showHelp,setShowHelp]=useState(true);
@@ -531,10 +596,15 @@ export default function TradingCommandCenter(){
       if(!kb.some(k=>k.id===q.id)) kb=[q,...kb];
       await sSet("coach:kb",kb); await sSet("coach:threeQ",true);
     }
+    // Load tombstones and honor them from the first render (deleted trades stay gone).
+    let tomb=await sGet("journal:deleted"); if(!Array.isArray(tomb)) tomb=[];
+    t=applyTombstones(t,tomb);
     setTrades(t);
     // If this device is linked to a sync code, pull the other device's trades and merge.
     const _sc=getSyncCode();
-    if(_sc){ const remote=await syncPull(_sc); if(remote&&Array.isArray(remote.trades)&&remote.trades.length){ t=mergeTradesById(t,remote.trades); setTrades(t); } }
+    if(_sc){ const remote=await syncPull(_sc); if(remote){ tomb=mergeIds(tomb,remote.deleted); if(Array.isArray(remote.trades)&&remote.trades.length){ t=applyTombstones(mergeTradesById(t,remote.trades),tomb); setTrades(t); } } }
+    setDeletedIds(tomb);
+    syncScans();   // pull the other device's saved scans into this one's Scans tab
     const w=await sGet("watchlist:tickers");
     let list = (Array.isArray(w)&&w.length) ? [...w] : [...DEFAULT_WATCH];
     const ver = await sGet("settings:watchVersion");
@@ -597,7 +667,7 @@ export default function TradingCommandCenter(){
         {tab==="guide" && <Guide/>}
         {tab==="today" && <Today trades={trades} setTrades={setTrades} watch={watch} quotes={quotes} setQuotes={setQuotes} goJournal={()=>setTab("journal")} goRunner={()=>setTab("runner")} />}
         {tab==="dash" && <Dashboard trades={trades} goJournal={()=>setTab("journal")} />}
-        {tab==="journal" && <Journal trades={trades} setTrades={setTrades} watch={watch} syncMsg={syncMsg} onSyncNow={syncNow} />}
+        {tab==="journal" && <Journal trades={trades} setTrades={setTrades} watch={watch} syncMsg={syncMsg} onSyncNow={syncNow} onDeleteTrade={recordDelete} />}
         {tab==="review" && <ReviewPanel trades={trades} />}
         {tab==="watch" && <Watchlist watch={watch} setWatch={setWatch} quotes={quotes} setQuotes={setQuotes} />}
         {tab==="strat" && <StratScanner watch={watch} />}
@@ -2317,7 +2387,7 @@ function SyncCard({syncMsg,onSyncNow}){
     </div>
   );
 }
-function Journal({trades,setTrades,watch,syncMsg,onSyncNow}){
+function Journal({trades,setTrades,watch,syncMsg,onSyncNow,onDeleteTrade}){
   const [d,setD]=useState(BLANK);
   const [filter,setFilter]=useState("all");
   const fileRef=useRef(null);
@@ -2348,18 +2418,24 @@ function Journal({trades,setTrades,watch,syncMsg,onSyncNow}){
     if(shotRef.current) shotRef.current.value="";
   }
 
+  // Stamp every mutation so the cross-device merge can keep the NEWER edit instead
+  // of letting a stale copy from the other device clobber it.
+  const stamp=x=>({...x,updatedAt:Date.now()});
   function add(){
     if(!d.ticker.trim()){ setAddOk(""); setAddErr("Add a ticker first — it's the one required field. Type it in the Ticker box above (e.g. IWM), then tap Log trade."); return; }
-    const entry={...d,ticker:d.ticker.toUpperCase().trim(),id:Date.now()+"-"+Math.random().toString(36).slice(2,6)};
+    const entry={...d,ticker:d.ticker.toUpperCase().trim(),id:Date.now()+"-"+Math.random().toString(36).slice(2,6),updatedAt:Date.now()};
     setTrades(t=>[...t,entry]);
     setAddErr(""); setAddOk(`Logged ${entry.ticker}${previewPnl!=null?` · ${fmtMoney(previewPnl)}`:""} — it's in your History below.`);
     setD({...BLANK,date:d.date});
   }
-  function del(id){ setTrades(t=>t.filter(x=>x.id!==id)); }
-  function togglePlan(id){ setTrades(t=>t.map(x=>x.id===id?{...x,planFollowed:!x.planFollowed}:x)); }
-  function setSetup(id,v){ setTrades(t=>t.map(x=>x.id===id?{...x,setup:v}:x)); }
-  function setReview(id,rev){ setTrades(t=>t.map(x=>x.id===id?{...x,review:rev}:x)); }
-  function setGrade(id,v){ setTrades(t=>t.map(x=>x.id===id?{...x,grade:v==="—"?undefined:v}:x)); }
+  function del(id){ setTrades(t=>t.filter(x=>x.id!==id)); onDeleteTrade&&onDeleteTrade(id); }
+  function togglePlan(id){ setTrades(t=>t.map(x=>x.id===id?stamp({...x,planFollowed:!x.planFollowed}):x)); }
+  function setSetup(id,v){ setTrades(t=>t.map(x=>x.id===id?stamp({...x,setup:v}):x)); }
+  function setReview(id,rev){ setTrades(t=>t.map(x=>x.id===id?stamp({...x,review:rev}):x)); }
+  // The 6 questions: three-state per question (✓ / ✗ / unanswered) stored on the
+  // trade itself, so it persists in journal:trades AND rides the cross-device sync.
+  function setSixQ(id,qid,val){ setTrades(t=>t.map(x=>{ if(x.id!==id) return x; const sq={...(x.sixQ||{})}; if(val==null) delete sq[qid]; else sq[qid]=val; return stamp({...x,sixQ:sq}); })); }
+  function setGrade(id,v){ setTrades(t=>t.map(x=>x.id===id?stamp({...x,grade:v==="—"?undefined:v}):x)); }
   const [grading,setGrading]=useState(false); const [gerr,setGerr]=useState("");
   const [edgeHelp,setEdgeHelp]=useState(false);
   async function autoGrade(){
@@ -2514,7 +2590,7 @@ function Journal({trades,setTrades,watch,syncMsg,onSyncNow}){
           {list.length===0
             ? <p style={{margin:0,color:"var(--dim)",fontSize:15}}>Nothing here yet. Your first logged trade starts the data set that tells you which triggers to keep taking.</p>
             : <div style={{display:"flex",flexDirection:"column",gap:8,maxHeight:520,overflow:"auto"}} className="scroll">
-                {list.map(t=><TradeRow key={t.id} t={t} onDel={()=>del(t.id)} onToggle={()=>togglePlan(t.id)} onSetSetup={(v)=>setSetup(t.id,v)} onSetGrade={(v)=>setGrade(t.id,v)} onSetReview={(rev)=>setReview(t.id,rev)}/>)}
+                {list.map(t=><TradeRow key={t.id} t={t} onDel={()=>del(t.id)} onToggle={()=>togglePlan(t.id)} onSetSetup={(v)=>setSetup(t.id,v)} onSetGrade={(v)=>setGrade(t.id,v)} onSetReview={(rev)=>setReview(t.id,rev)} onSetSixQ={(qid,val)=>setSixQ(t.id,qid,val)}/>)}
               </div>}
         </div>
       </div>
@@ -2580,6 +2656,15 @@ function EdgeRow({setup,v,rows}){
 }
 
 function gradeColor(g){ if(g==="A"||g==="B") return "var(--bull)"; if(g==="C") return "var(--brass)"; if(g==="D"||g==="F") return "var(--bear)"; return "var(--faint)"; }
+// The 6 questions — the discipline pipeline, as a ✓/✗ checklist on EVERY trade.
+const SIX_Q=[
+  {id:"q1",short:"Trigger",   q:"1. Real trigger — not anticipation or hope?"},
+  {id:"q2",short:"Stop-sized",q:"2. Sized off the stop (fixed % risk)?"},
+  {id:"q3",short:"Scaled",    q:"3. Scaled out / took profit into strength?"},
+  {id:"q4",short:"Strike/DTE",q:"4. Right strike & DTE (near-money, Δ 0.55–0.70)?"},
+  {id:"q5",short:"Closed 3:30",q:"5. Closed before the 0DTE 3:30 risk-off?"},
+  {id:"q6",short:"No zero",   q:"6. Never held the option to zero (had a stop)?"},
+];
 const GOOD_MOVES=["Waited for a real trigger","Near-money strike (Δ 0.55–0.70)","Sized off the stop","Scaled out into strength","Closed 0DTE before 3:30","Trend-aligned (EMA/VWAP)"];
 const LEAKS=["Far-OTM lotto strike","Premium too cheap (below floor)","Held into theta / expiration","No trigger — anticipated","No stop / no exit plan","Averaged down / chased"];
 const LEAK_LESSON={
@@ -2590,7 +2675,7 @@ const LEAK_LESSON={
   "No stop / no exit plan":"Size off the stop and define the exit BEFORE you enter — structure sets the risk, not the premium.",
   "Averaged down / chased":"Don't add to a loser or chase strength — you sized the risk once; adding breaks the plan.",
 };
-function TradeRow({t,onDel,onToggle,onSetSetup,onSetGrade,onSetReview}){
+function TradeRow({t,onDel,onToggle,onSetSetup,onSetGrade,onSetReview,onSetSixQ}){
   const p=computePnl(t);
   const [chat,setChat]=useState(false);
   const [good,setGood]=useState(()=>(t.review&&Array.isArray(t.review.good))?t.review.good:[]);
@@ -2628,6 +2713,14 @@ function TradeRow({t,onDel,onToggle,onSetSetup,onSetGrade,onSetReview}){
           {t.date} {t.entry&&`· in ${t.entry}`} {t.exit&&`→ out ${t.exit}`} {t.quantity&&`· ×${t.quantity}`}
         </span>
         <span onClick={onToggle} title="Tap to toggle plan followed" className="mono" style={{fontSize:12,cursor:"pointer",color: t.planFollowed?"var(--brass-dim)":"var(--bear)"}}>{t.planFollowed?"on plan ✓":"off plan ✗"}</span>
+      </div>
+      {/* The 6 questions — on every trade. Tap cycles unanswered · → ✓ → ✗ → · */}
+      <div style={{marginTop:8,display:"flex",gap:5,flexWrap:"wrap",alignItems:"center"}}>
+        <span className="mono" style={{fontSize:9.5,letterSpacing:"0.12em",color:"var(--faint)"}} title="The 6 questions — answer ✓ or ✗ on every trade">6Q</span>
+        {SIX_Q.map(q=>{ const v=(t.sixQ||{})[q.id]; const c=v===true?"var(--bull)":v===false?"var(--bear)":"var(--faint)"; const mark=v===true?"✓":v===false?"✗":"·";
+          return <button key={q.id} title={q.q} onClick={(e)=>{ e.stopPropagation(); onSetSixQ&&onSetSixQ(q.id, v===true?false:v===false?null:true); }}
+            style={{fontFamily:"'JetBrains Mono',monospace",fontSize:10.5,padding:"3px 7px",borderRadius:6,cursor:"pointer",border:"1px solid "+(v==null?"var(--line2)":c),background:v==null?"var(--bg2)":(v?"rgba(63,183,130,0.12)":"rgba(231,106,91,0.12)"),color:c}}>{q.short} {mark}</button>;
+        })}
       </div>
       {t.notes && <div style={{fontSize:13.5,color:"var(--dim)",marginTop:7,lineHeight:1.5}}>{t.notes}</div>}
       {t.img && <img src={t.img} alt="chart" style={{marginTop:8,maxWidth:"100%",maxHeight:200,borderRadius:8,border:"1px solid var(--line2)",display:"block"}}/>}
@@ -3542,6 +3635,8 @@ async function logScan(source, syms, top, batchId){
     const entry = { id: Date.now()+"-"+Math.random().toString(36).slice(2,6), batchId: batchId!=null?batchId:null, ts: Date.now(), date: todayISO(),
       source, syms:(syms||[]).map(s=>String(s||"").toUpperCase()).filter(Boolean).slice(0,40), top:(top||[]).slice(0,40) };
     await sSet("scan:log", [entry, ...base].slice(0,400));
+    try{ window.dispatchEvent(new CustomEvent("tcc:scans-updated")); }catch(e){}
+    pushScans();   // share this scan with the user's other devices
   }catch(e){}
 }
 function srcTone(s){ return s==="Runner"?"var(--brass)":s==="Bias scan"?"var(--focus)":(s==="Goal plays"||s==="Account plays")?"var(--bull)":"var(--comp)"; }
@@ -3550,7 +3645,8 @@ function ScanJournal({trades}){
   const [log,setLog]=useState(null);
   const [openId,setOpenId]=useState(null);
   const [srcFilter,setSrcFilter]=useState("all");
-  useEffect(()=>{ (async()=>{ const l=await sGet("scan:log"); setLog(Array.isArray(l)?l:[]); })(); },[]);
+  useEffect(()=>{ const read=async()=>{ const l=await sGet("scan:log"); setLog(Array.isArray(l)?l:[]); }; read();
+    const h=()=>read(); window.addEventListener("tcc:scans-updated",h); return ()=>window.removeEventListener("tcc:scans-updated",h); },[]);
   const tradesFor=(scan)=>(trades||[]).filter(t=>{
     const tk=(t.ticker||"").toUpperCase(); if(!tk) return false;
     if(!(scan.syms||[]).map(s=>String(s).toUpperCase()).includes(tk)) return false;

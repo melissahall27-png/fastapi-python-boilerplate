@@ -38,12 +38,17 @@ export default async function handler(req, res) {
   const codeRaw = req.method === "POST" ? (req.body && req.body.code) : (req.query && req.query.code);
   const code = cleanCode(codeRaw);
   if (!code) return res.status(200).json({ ok: false, reason: "no-code" });
-  const key = "tccsync:" + code;
+  // Optional namespace so one code can hold several independent blobs (e.g. the
+  // journal vs. the scan log), each in its own key. Omitted = the journal (trades).
+  const nsRaw = req.method === "POST" ? (req.body && req.body.ns) : (req.query && req.query.ns);
+  const ns = String(nsRaw || "").toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 24);
+  const key = "tccsync:" + (ns ? ns + ":" : "") + code;
 
   try {
     if (req.method === "POST") {
       const trades = (req.body && Array.isArray(req.body.trades)) ? req.body.trades : [];
-      const payload = JSON.stringify({ trades, ts: Date.now() });
+      const deleted = (req.body && Array.isArray(req.body.deleted)) ? req.body.deleted.slice(0, 5000) : [];
+      const payload = JSON.stringify({ trades, deleted, ts: Date.now() });
       if (payload.length > 900000) return res.status(200).json({ ok: false, reason: "too-big" });
       // Upstash REST: POST {base}/set/{key} with the value as the request body.
       const r = await fetch(`${base}/set/${encodeURIComponent(key)}`, { method: "POST", headers: auth, body: payload });
@@ -55,12 +60,13 @@ export default async function handler(req, res) {
     const r = await fetch(`${base}/get/${encodeURIComponent(key)}`, { headers: auth });
     const j = await r.json().catch(() => null);
     const val = j && j.result;
-    if (!val) return res.status(200).json({ ok: true, trades: [] });
+    if (!val) return res.status(200).json({ ok: true, trades: [], deleted: [] });
     let parsed = null;
     try { parsed = JSON.parse(val); } catch (e) { parsed = null; }
     return res.status(200).json({
       ok: true,
       trades: (parsed && Array.isArray(parsed.trades)) ? parsed.trades : [],
+      deleted: (parsed && Array.isArray(parsed.deleted)) ? parsed.deleted : [],
       ts: parsed && parsed.ts,
     });
   } catch (e) {
