@@ -30,7 +30,7 @@ async function oneQuote(sym) {
 export default async function handler(req, res) {
   const raw = String((req.query && req.query.symbols) || "");
   const syms = raw.split(",")
-    .map(s => s.trim().toUpperCase().replace(/[^A-Z0-9.\-]/g, ""))
+    .map(s => s.trim().toUpperCase().replace(/[^A-Z0-9.\-=^]/g, "")) // keep "=" (futures) and "^" (indices)
     .filter(Boolean)
     .filter((s, i, a) => a.indexOf(s) === i)
     .slice(0, 50);

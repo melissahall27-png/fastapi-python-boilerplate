@@ -4058,15 +4058,27 @@ function detectSweep(bars){
   }
   return null;
 }
-function LiquiditySweepScanner({watch}){
+// Preset universes for the sweep scanner. Futures use Yahoo's "=F" symbols with
+// friendly display names; stocks are a mega-cap, high-liquidity set.
+const FUTURES_LIST=[
+  ["ES=F","S&P 500 · ES"],["NQ=F","Nasdaq-100 · NQ"],["RTY=F","Russell 2000 · RTY"],["YM=F","Dow · YM"],
+  ["CL=F","Crude Oil · CL"],["GC=F","Gold · GC"],["SI=F","Silver · SI"],["NG=F","Nat Gas · NG"],
+  ["HG=F","Copper · HG"],["ZB=F","30Y Bonds · ZB"],["ZN=F","10Y Notes · ZN"],["6E=F","Euro FX · 6E"],
+];
+const FUTURES_TICKERS=FUTURES_LIST.map(x=>x[0]);
+const FUTURES_NAMES=Object.fromEntries(FUTURES_LIST);
+const STOCKS_LIST=["NVDA","AAPL","MSFT","GOOGL","AMZN","META","TSLA","AMD","AVGO","NFLX","PLTR","MU","SMCI","ARM","MRVL","QCOM","COIN","CRM","UBER","TSM"];
+function LiquiditySweepScanner({watch, universe, names, eyebrow, blurb, cta, help}){
   const [hits,setHits]=useState(null);
   const [busy,setBusy]=useState(false);
   const [note,setNote]=useState("");
   const [done,setDone]=useState(0);
   const [total,setTotal]=useState(0);
+  const source = (universe&&universe.length) ? universe : (watch||[]);
+  const nameOf = s => (names && names[s]) ? names[s] : s;
   async function scan(){
-    const syms=[...new Set((watch||[]).map(s=>String(s).toUpperCase()).filter(Boolean))].slice(0,24);
-    if(!syms.length){ setNote("Add tickers to your watchlist first."); return; }
+    const syms=[...new Set(source.map(s=>String(s).toUpperCase()).filter(Boolean))].slice(0,24);
+    if(!syms.length){ setNote("Nothing to scan yet."); return; }
     setBusy(true); setNote(""); setHits(null); setDone(0); setTotal(syms.length);
     const out=[];
     for(let i=0;i<syms.length;i+=4){
@@ -4086,18 +4098,18 @@ function LiquiditySweepScanner({watch}){
     }
     out.sort((a,b)=>b.depth-a.depth);
     setHits(out); setBusy(false);
-    setNote(out.length?`${out.length} sweep${out.length===1?"":"s"} across ${syms.length} tickers — deepest raids first.`
-                      :`No fresh sweeps across ${syms.length} tickers — nobody's stops got raided.`);
+    setNote(out.length?`${out.length} sweep${out.length===1?"":"s"} across ${syms.length} — deepest raids first.`
+                      :`No fresh sweeps across ${syms.length} — nobody's stops got raided.`);
   }
   return (
     <div className="card" style={{padding:20}}>
       <div style={{display:"flex",alignItems:"center",gap:7}}>
-        <div className="eyebrow" style={{margin:0}}>Liquidity sweep scanner</div>
-        <Help text="Free, no AI. Scans your watchlist's daily bars for a stop hunt: price that wicked past a recent swing high/low to grab the obvious stops, then CLOSED back inside (a sweep-and-reclaim). That reclaim is the reversal — trade it instead of being the liquidity. See 'Don't be the liquidity' in the Playbook."/>
+        <div className="eyebrow" style={{margin:0}}>{eyebrow||"Liquidity sweep scanner"}</div>
+        <Help text={help||"Free, no AI. Scans your watchlist's daily bars for a stop hunt: price that wicked past a recent swing high/low to grab the obvious stops, then CLOSED back inside (a sweep-and-reclaim). That reclaim is the reversal — trade it instead of being the liquidity. See 'Don't be the liquidity' in the Playbook."}/>
       </div>
-      <div style={{fontSize:13.5,color:"var(--dim)",lineHeight:1.6,margin:"8px 0 13px"}}>Finds tickers that just raided the obvious stops and reversed — a <b style={{color:"var(--bone)"}}>▲ reclaim</b> (swept the lows, closed back above → long bias) or <b style={{color:"var(--bone)"}}>▼ rejection</b> (swept the highs, closed back below → short bias). Put your stop past the wick, not on the level.</div>
+      <div style={{fontSize:13.5,color:"var(--dim)",lineHeight:1.6,margin:"8px 0 13px"}}>{blurb||<>Finds tickers that just raided the obvious stops and reversed — a <b style={{color:"var(--bone)"}}>▲ reclaim</b> (swept the lows, closed back above → long bias) or <b style={{color:"var(--bone)"}}>▼ rejection</b> (swept the highs, closed back below → short bias). Put your stop past the wick, not on the level.</>}</div>
       <button className="btn btn-primary" onClick={scan} disabled={busy} style={{opacity:busy?.6:1}}>
-        {busy?<span><span className="spin"/>{`  Scanning ${done}/${total}…`}</span>:"🎯 Scan watchlist for sweeps"}
+        {busy?<span><span className="spin"/>{`  Scanning ${done}/${total}…`}</span>:(cta||"🎯 Scan watchlist for sweeps")}
       </button>
       {note && <div className="mono" style={{fontSize:12.5,color:"var(--faint)",marginTop:11}}>{note}</div>}
       {hits && hits.length>0 && (
@@ -4105,7 +4117,7 @@ function LiquiditySweepScanner({watch}){
           {hits.map((h,i)=>{ const up=h.dir==="up"; return (
             <div key={i} style={{padding:"11px 13px",background:"var(--bg)",border:"1px solid var(--line)",borderRadius:10}}>
               <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-                <b className="disp" style={{fontSize:15,color:"var(--bone)"}}>{h.s}</b>
+                <b className="disp" style={{fontSize:15,color:"var(--bone)"}}>{nameOf(h.s)}</b>
                 <span className="tag" style={{color:up?"var(--bull)":"var(--bear)",borderColor:up?"var(--bull)":"var(--bear)"}}>{up?"▲ reclaim · long":"▼ rejection · short"}</span>
                 <span className="mono" style={{marginLeft:"auto",fontSize:11.5,color:"var(--faint)"}}>{h.ago===0?"today":h.ago+"d ago"}</span>
               </div>
@@ -4125,6 +4137,20 @@ function Tools({watch,setWatch}){
     <div style={{display:"flex",flexDirection:"column",gap:18}}>
       <KeyLevels/>
       <LiquiditySweepScanner watch={watch}/>
+      <LiquiditySweepScanner
+        universe={FUTURES_TICKERS} names={FUTURES_NAMES}
+        eyebrow="Futures — liquidity sweeps"
+        cta="🎯 Scan futures for sweeps"
+        help="Free, no AI. Daily-bar sweep-and-reclaim on the major index & commodity futures. The obvious swing highs/lows on ES, NQ, RTY and the like are giant liquidity pools — this flags the ones that just got raided and reversed."
+        blurb={<>The same stop-hunt scan, run on the index &amp; commodity futures (ES, NQ, RTY, YM, CL, GC…) from free data. <b style={{color:"var(--bone)"}}>▲ reclaim</b> = swept the lows, closed back above (long the move); <b style={{color:"var(--bone)"}}>▼ rejection</b> = swept the highs, closed back below (short). Stop past the wick.</>}
+      />
+      <LiquiditySweepScanner
+        universe={STOCKS_LIST}
+        eyebrow="Stocks — liquidity sweeps"
+        cta="🎯 Scan stocks for sweeps"
+        help="Free, no AI. Daily-bar sweep-and-reclaim on a mega-cap, high-liquidity stock list. Same read as the watchlist scan, on the biggest names."
+        blurb={<>The same stop-hunt scan on a mega-cap stock list (NVDA, AAPL, MSFT, GOOGL, AMZN, META…). <b style={{color:"var(--bone)"}}>▲ reclaim</b> = long bias, <b style={{color:"var(--bone)"}}>▼ rejection</b> = short bias. Put your stop past the wick, not on the level.</>}
+      />
       <PivotCalculator/>
       <StdDevCalculator/>
       <TickerFinder watch={watch} setWatch={setWatch}/>

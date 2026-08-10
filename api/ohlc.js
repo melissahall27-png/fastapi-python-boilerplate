@@ -9,7 +9,8 @@ const RANGE_FOR = { "15m": "5d", "60m": "1mo", "1d": "6mo" };
 
 export default async function handler(req, res) {
   const q = req.query || {};
-  const sym = String(q.symbol || "").toUpperCase().replace(/[^A-Z0-9.\-]/g, "");
+  // Allow "=" (futures, e.g. ES=F) and "^" (indices, e.g. ^GSPC) besides the usual set.
+  const sym = String(q.symbol || "").toUpperCase().replace(/[^A-Z0-9.\-=^]/g, "");
   if (!sym) return res.status(400).json({ error: "symbol required" });
 
   const interval = ["15m", "60m", "1d"].includes(String(q.interval)) ? String(q.interval) : "1d";
