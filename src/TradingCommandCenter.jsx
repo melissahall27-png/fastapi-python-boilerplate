@@ -120,7 +120,10 @@ function mergeTradesById(a,b){
   for(const t of [...(a||[]),...(b||[])]){ if(t&&t.id){ const ex=m.get(t.id); if(!ex || Object.keys(t).length>=Object.keys(ex).length) m.set(t.id,t); } }
   return [...m.values()];
 }
-function getSyncCode(){ try{ return (window.localStorage.getItem(TCC_PREFIX+"sync:code")||"").trim(); }catch(e){ return ""; } }
+/* Automatic: all of this user's devices share one fixed key, so sync "just works"
+   with no code to type. (A stored custom code still overrides, if ever set.) */
+const AUTO_SYNC_KEY="edge-room-primary";
+function getSyncCode(){ try{ return (window.localStorage.getItem(TCC_PREFIX+"sync:code")||"").trim() || AUTO_SYNC_KEY; }catch(e){ return AUTO_SYNC_KEY; } }
 async function syncPull(code){
   try{ const r=await fetch("/api/sync?code="+encodeURIComponent(code)); const j=await r.json().catch(()=>null); return (j&&j.ok&&Array.isArray(j.trades))?{trades:j.trades,ts:j.ts}:null; }catch(e){ return null; }
 }
@@ -415,38 +418,35 @@ export default function TradingCommandCenter(){
   const [watch,setWatch]=useState(DEFAULT_WATCH);
   const [quotes,setQuotes]=useState({});
   const [loaded,setLoaded]=useState(false);
-  const [syncOn,setSyncOn]=useState(false);
-  const [syncCodeVal,setSyncCodeVal]=useState("");
   const [syncMsg,setSyncMsg]=useState("");
   const pushTimer=useRef(null);
-  useEffect(()=>{ const c=getSyncCode(); if(c){ setSyncCodeVal(c); setSyncOn(true); } },[]);
-  async function connectSync(raw){
-    const code=String(raw||"").trim().toLowerCase().replace(/[^a-z0-9_-]/g,"").slice(0,64);
-    try{ window.localStorage.setItem(TCC_PREFIX+"sync:code",code); }catch(e){}
-    setSyncCodeVal(code); setSyncOn(!!code);
-    if(!code){ setSyncMsg("Sync turned off — this device is local again."); return; }
-    setSyncMsg("Connecting…");
-    const remote=await syncPull(code);
+  // Auto-sync: no code to type. Pull+push against the fixed key and report status.
+  async function syncNow(){
+    const c=getSyncCode();
+    setSyncMsg("Checking…");
+    const remote=await syncPull(c);
     let base=trades;
     if(remote&&Array.isArray(remote.trades)&&remote.trades.length){ base=mergeTradesById(trades,remote.trades); setTrades(base); }
-    const res=await syncPush(code,base);
-    if(res&&res.ok) setSyncMsg("✓ Synced. Enter this SAME code on your other device and your trades will follow you.");
-    else if(res&&res.reason==="not-configured") setSyncMsg("Saved on this device — but the cloud store isn't connected yet. One-time setup needed (ask in chat).");
-    else setSyncMsg("Saved locally — couldn't reach the cloud store yet. Check the setup.");
+    const res=await syncPush(c,base);
+    if(res&&res.ok) setSyncMsg("✓ Auto-sync is ON — your devices are linked. Log anywhere, it shows up everywhere.");
+    else if(res&&res.reason==="not-configured") setSyncMsg("Auto-sync is ready — it just needs the one-time storage box connected on Vercel (ask me in chat, ~2 clicks).");
+    else setSyncMsg("Couldn't reach the cloud store yet — check the storage setup.");
   }
+  // On load, establish sync status once.
+  useEffect(()=>{ if(loaded) syncNow(); /* eslint-disable-next-line */ },[loaded]);
   // Push my trades to the cloud shortly after they change (debounced).
   useEffect(()=>{
-    if(!loaded || !syncOn) return; const c=getSyncCode(); if(!c) return;
+    if(!loaded) return; const c=getSyncCode();
     if(pushTimer.current) clearTimeout(pushTimer.current);
     pushTimer.current=setTimeout(()=>{ syncPush(c,trades); }, 1500);
     return ()=>{ if(pushTimer.current) clearTimeout(pushTimer.current); };
-  },[trades,loaded,syncOn]);
+  },[trades,loaded]);
   // Pull the other device's trades every 45s and merge them in.
   useEffect(()=>{
-    if(!loaded || !syncOn) return; const c=getSyncCode(); if(!c) return;
+    if(!loaded) return; const c=getSyncCode();
     const id=setInterval(async()=>{ const remote=await syncPull(c); if(remote&&Array.isArray(remote.trades)){ setTrades(prev=>{ const merged=mergeTradesById(prev,remote.trades); return merged.length!==prev.length? merged: prev; }); } }, 45000);
     return ()=>clearInterval(id);
-  },[loaded,syncOn]);
+  },[loaded]);
   const [showHelp,setShowHelp]=useState(true);
   useEffect(()=>{ (async()=>{ try{ const s=await sGet("ui:showHelp"); if(s===false) setShowHelp(false); }catch(e){} })(); },[]);
   useEffect(()=>{ sSet("ui:showHelp",showHelp); },[showHelp]);
@@ -596,7 +596,7 @@ export default function TradingCommandCenter(){
         {tab==="guide" && <Guide/>}
         {tab==="today" && <Today trades={trades} setTrades={setTrades} watch={watch} quotes={quotes} setQuotes={setQuotes} goJournal={()=>setTab("journal")} goRunner={()=>setTab("runner")} />}
         {tab==="dash" && <Dashboard trades={trades} goJournal={()=>setTab("journal")} />}
-        {tab==="journal" && <Journal trades={trades} setTrades={setTrades} watch={watch} syncCodeVal={syncCodeVal} syncOn={syncOn} syncMsg={syncMsg} onConnectSync={connectSync} />}
+        {tab==="journal" && <Journal trades={trades} setTrades={setTrades} watch={watch} syncMsg={syncMsg} onSyncNow={syncNow} />}
         {tab==="review" && <ReviewPanel trades={trades} />}
         {tab==="watch" && <Watchlist watch={watch} setWatch={setWatch} quotes={quotes} setQuotes={setQuotes} />}
         {tab==="strat" && <StratScanner watch={watch} />}
@@ -2298,27 +2298,25 @@ function Stat({label,value,sub,tone,help}){
 /* ============================ JOURNAL ============================ */
 const BLANK={date:todayISO(),ticker:"",instrument:"Stock",direction:"Long",optType:"Call",strike:"",expiry:"",entry:"",exit:"",quantity:"",multiplier:"",setup:"2-2 continuation",timeframe:"15m",horizon:"Day",pnlManual:"",planFollowed:true,emotion:"On plan",notes:"",img:null};
 
-function SyncCard({syncCodeVal,syncOn,syncMsg,onConnectSync}){
-  const [code,setCode]=useState(syncCodeVal||"");
-  useEffect(()=>{ setCode(syncCodeVal||""); },[syncCodeVal]);
+function SyncCard({syncMsg,onSyncNow}){
+  const ok=/✓|linked/i.test(syncMsg||"");
+  const needsSetup=/needs|storage|couldn/i.test(syncMsg||"");
   return (
-    <div className="card" style={{padding:16,marginBottom:14,borderColor:syncOn?"var(--bull)":"var(--line)"}}>
+    <div className="card" style={{padding:16,marginBottom:14,borderColor:ok?"var(--bull)":needsSetup?"var(--brass-dim)":"var(--line)"}}>
       <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:6}}>
         <div className="eyebrow" style={{margin:0}}>Cross-device sync</div>
-        <Help text="Enter the SAME private code on your phone and your desktop and your trades follow you between them — log on the phone, review on the laptop. Trades merge (nothing overwrites). Screenshots stay on the device that took them. Needs a one-time cloud-store hookup on your Vercel account."/>
-        {syncOn && <span className="mono" style={{marginLeft:"auto",fontSize:11,color:"var(--bull)",border:"1px solid var(--bull)",borderRadius:6,padding:"2px 7px"}}>● linked</span>}
+        <Help text="Your journal syncs across all your devices automatically — log on your phone, review on desktop, no codes to type. Trades merge (nothing overwrites); screenshots stay on the device that took them. It rides on one free storage box connected to your Vercel project (a one-time hookup)."/>
+        <span className="mono" style={{marginLeft:"auto",fontSize:11,color:ok?"var(--bull)":"var(--brass)",border:"1px solid "+(ok?"var(--bull)":"var(--brass-dim)"),borderRadius:6,padding:"2px 7px"}}>{ok?"● auto · linked":"● setup needed"}</span>
       </div>
-      <div style={{fontSize:13,color:"var(--dim)",lineHeight:1.6,marginBottom:10}}>Type a private code (any word only you know) on <b style={{color:"var(--bone)"}}>every</b> device — same code = same journal. Log on your phone, see it on desktop.</div>
+      <div style={{fontSize:13,color:"var(--dim)",lineHeight:1.6,marginBottom:10}}>Automatic — <b style={{color:"var(--bone)"}}>no code to type.</b> Every device signed into this app shares the same journal. Log on your phone, it shows up on desktop on its own.</div>
       <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
-        <input value={code} onChange={e=>setCode(e.target.value)} placeholder="e.g. edge-room-mel" className="mono" style={{flex:"1 1 180px",padding:"9px 11px",fontSize:14}}/>
-        <button className="btn btn-primary" onClick={()=>onConnectSync(code)} style={{padding:"9px 15px",fontSize:13.5}}>{syncOn?"Update code":"Link this device"}</button>
-        {syncOn && <button className="btn" onClick={()=>onConnectSync("")} style={{padding:"9px 13px",fontSize:12.5,color:"var(--faint)"}}>Turn off</button>}
+        <button className="btn btn-primary" onClick={onSyncNow} style={{padding:"9px 15px",fontSize:13.5}}>Sync now</button>
       </div>
-      {syncMsg && <div className="mono" style={{fontSize:12.5,color:/✓|Synced/.test(syncMsg)?"var(--bull)":/setup|isn't connected|couldn/.test(syncMsg)?"var(--brass)":"var(--dim)",marginTop:10,lineHeight:1.5}}>{syncMsg}</div>}
+      {syncMsg && <div className="mono" style={{fontSize:12.5,color:ok?"var(--bull)":needsSetup?"var(--brass)":"var(--dim)",marginTop:10,lineHeight:1.5}}>{syncMsg}</div>}
     </div>
   );
 }
-function Journal({trades,setTrades,watch,syncCodeVal,syncOn,syncMsg,onConnectSync}){
+function Journal({trades,setTrades,watch,syncMsg,onSyncNow}){
   const [d,setD]=useState(BLANK);
   const [filter,setFilter]=useState("all");
   const fileRef=useRef(null);
@@ -2387,7 +2385,7 @@ function Journal({trades,setTrades,watch,syncCodeVal,syncOn,syncMsg,onConnectSyn
 
   return (
     <div>
-    <SyncCard syncCodeVal={syncCodeVal} syncOn={syncOn} syncMsg={syncMsg} onConnectSync={onConnectSync}/>
+    <SyncCard syncMsg={syncMsg} onSyncNow={onSyncNow}/>
     <div style={{display:"grid",gridTemplateColumns:"minmax(0,360px) 1fr",gap:18,alignItems:"start"}} className="jgrid">
       <style>{`@media(max-width:820px){.jgrid{grid-template-columns:1fr !important;}}`}</style>
 
