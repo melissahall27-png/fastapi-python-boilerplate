@@ -2254,6 +2254,7 @@ function Journal({trades,setTrades,watch}){
   async function pickImg(e){ const f=(e.target.files||[])[0]; if(!f) return; try{ const t=await fileToThumb(f); set("img",t); }catch(_){}; if(fileRef.current) fileRef.current.value=""; }
   const shotRef=useRef(null);
   const [reading,setReading]=useState(false); const [rerr,setRerr]=useState("");
+  const [addErr,setAddErr]=useState(""); const [addOk,setAddOk]=useState("");
   async function readShot(e){
     const f=(e.target.files||[])[0]; if(!f) return;
     setReading(true); setRerr("");
@@ -2276,9 +2277,10 @@ function Journal({trades,setTrades,watch}){
   }
 
   function add(){
-    if(!d.ticker.trim()) return;
+    if(!d.ticker.trim()){ setAddOk(""); setAddErr("Add a ticker first — it's the one required field. Type it in the Ticker box above (e.g. IWM), then tap Log trade."); return; }
     const entry={...d,ticker:d.ticker.toUpperCase().trim(),id:Date.now()+"-"+Math.random().toString(36).slice(2,6)};
     setTrades(t=>[...t,entry]);
+    setAddErr(""); setAddOk(`Logged ${entry.ticker}${previewPnl!=null?` · ${fmtMoney(previewPnl)}`:""} — it's in your History below.`);
     setD({...BLANK,date:d.date});
   }
   function del(id){ setTrades(t=>t.filter(x=>x.id!==id)); }
@@ -2333,7 +2335,7 @@ function Journal({trades,setTrades,watch}){
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
           <Field label="Date"><input type="date" value={d.date} onChange={e=>set("date",e.target.value)}/></Field>
           <Field label="Ticker">
-            <input list="wl" className="mono" placeholder="IWM" value={d.ticker} onChange={e=>set("ticker",e.target.value.toUpperCase())}/>
+            <input list="wl" className="mono" placeholder="IWM" value={d.ticker} onChange={e=>{set("ticker",e.target.value.toUpperCase()); if(addErr)setAddErr("");}}/>
             <datalist id="wl">{watch.map(w=><option key={w} value={w}/>)}</datalist>
           </Field>
           <Field label="Instrument"><select value={d.instrument} onChange={e=>set("instrument",e.target.value)}>{["Stock","Option","Future"].map(x=><option key={x}>{x}</option>)}</select></Field>
@@ -2388,6 +2390,8 @@ function Journal({trades,setTrades,watch}){
           </span>
           <button className="btn-primary btn" onClick={add}>Log trade</button>
         </div>
+        {addErr && <div style={{marginTop:10,padding:"9px 11px",background:"rgba(231,106,91,0.09)",border:"1px solid var(--bear)",borderRadius:9,color:"var(--bear)",fontSize:13,lineHeight:1.5}}>⚠ {addErr}</div>}
+        {addOk && <div style={{marginTop:10,padding:"9px 11px",background:"rgba(63,183,130,0.09)",border:"1px solid var(--bull)",borderRadius:9,color:"var(--bull)",fontSize:13,lineHeight:1.5}}>✓ {addOk}</div>}
       </div>
 
       {/* Right: edge table + list */}
