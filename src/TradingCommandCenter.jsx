@@ -117,7 +117,15 @@ async function sSet(key,val){
    trade text/numbers AND screenshots sync, so an uploaded shot shows everywhere. */
 function mergeTradesById(a,b){
   const m=new Map();
-  for(const t of [...(a||[]),...(b||[])]){ if(t&&t.id){ const ex=m.get(t.id); if(!ex || Object.keys(t).length>=Object.keys(ex).length) m.set(t.id,t); } }
+  for(const t of [...(a||[]),...(b||[])]){
+    if(!t||!t.id) continue;
+    const ex=m.get(t.id);
+    if(!ex){ m.set(t.id,{...t}); continue; }
+    // richer copy wins (existing behavior), but NEVER lose a screenshot either side still holds
+    const win = (Object.keys(t).length>=Object.keys(ex).length) ? {...t} : {...ex};
+    if(!win.img){ const keepImg=t.img||ex.img; if(keepImg) win.img=keepImg; }
+    m.set(t.id,win);
+  }
   return [...m.values()];
 }
 /* Automatic: all of this user's devices share one fixed key, so sync "just works"
@@ -127,9 +135,26 @@ function getSyncCode(){ try{ return (window.localStorage.getItem(TCC_PREFIX+"syn
 async function syncPull(code){
   try{ const r=await fetch("/api/sync?code="+encodeURIComponent(code)); const j=await r.json().catch(()=>null); return (j&&j.ok&&Array.isArray(j.trades))?{trades:j.trades,ts:j.ts}:null; }catch(e){ return null; }
 }
+// The whole journal is pushed as ONE blob the server caps at ~900k chars. Base64
+// screenshots are big, so a few of them could blow the cap and make EVERY push
+// fail — silently killing sync. Guard it here: keep all trade DATA, and if we're
+// over budget, drop screenshots from the OLDEST trades in the pushed copy until it
+// fits (those shots still live on the device that took them; the merge preserves
+// any image either side holds). Returns how many shots weren't carried.
+const SYNC_MAX=850000;
+function trimForSync(code,trades){
+  const size=a=>JSON.stringify({code,trades:a}).length;
+  let arr=(trades||[]);
+  if(size(arr)<=SYNC_MAX) return {trades:arr,dropped:0};
+  arr=arr.map(t=>({...t}));
+  let dropped=0;
+  for(let i=0;i<arr.length && size(arr)>SYNC_MAX;i++){ if(arr[i].img){ arr[i].img=null; dropped++; } }
+  while(arr.length>1 && size(arr)>SYNC_MAX){ arr.shift(); } // pathological: even text over budget
+  return {trades:arr,dropped};
+}
 async function syncPush(code,trades){
-  // Include screenshots (img) so an uploaded screenshot shows on every device too.
-  try{ const r=await fetch("/api/sync",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({code,trades:(trades||[])})}); return await r.json().catch(()=>({ok:false,reason:"bad-json"})); }catch(e){ return {ok:false,reason:"err"}; }
+  const {trades:payload,dropped}=trimForSync(code,trades);
+  try{ const r=await fetch("/api/sync",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({code,trades:payload})}); const j=await r.json().catch(()=>({ok:false,reason:"bad-json"})); if(j) j.dropped=dropped; return j; }catch(e){ return {ok:false,reason:"err"}; }
 }
 
 /* ---------- auto-run scans ----------
@@ -429,7 +454,9 @@ export default function TradingCommandCenter(){
     let base=trades;
     if(remote&&Array.isArray(remote.trades)&&remote.trades.length){ base=mergeTradesById(trades,remote.trades); setTrades(base); }
     const res=await syncPush(c,base);
-    if(res&&res.ok) setSyncMsg("✓ Auto-sync is ON — your devices are linked. Log anywhere, it shows up everywhere.");
+    if(res&&res.ok) setSyncMsg(res.dropped>0
+      ? `✓ Auto-sync is ON — trades are linked across devices. (${res.dropped} older screenshot${res.dropped>1?"s":""} stay on the device that took ${res.dropped>1?"them":"it"} to keep sync fast.)`
+      : "✓ Auto-sync is ON — your devices are linked. Log anywhere, it shows up everywhere.");
     else if(res&&res.reason==="not-configured") setSyncMsg("Auto-sync is ready — it just needs the one-time storage box connected on Vercel (ask me in chat, ~2 clicks).");
     else setSyncMsg("Couldn't reach the cloud store yet — check the storage setup.");
   }
