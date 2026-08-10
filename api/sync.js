@@ -18,8 +18,10 @@ function cleanCode(raw) {
 }
 
 export default async function handler(req, res) {
-  const base = process.env.KV_REST_API_URL;
-  const token = process.env.KV_REST_API_TOKEN;
+  // Accept whichever names the connected store uses — Vercel KV sets KV_REST_API_*,
+  // an Upstash Redis integration sets UPSTASH_REDIS_REST_* — so either works.
+  const base = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL;
+  const token = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN;
   if (!base || !token) return res.status(200).json({ ok: false, reason: "not-configured" });
 
   const auth = { Authorization: "Bearer " + token };
