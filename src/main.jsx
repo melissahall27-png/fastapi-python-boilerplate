@@ -1,13 +1,16 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import TradingCommandCenter, { TCC_PREFIX } from "./TradingCommandCenter.jsx";
 
-/* Self-heal a stale cached bundle: fetch the freshest index.html (bypassing
-   cache) and compare the hashed JS filename it references to the one actually
-   running. If they differ, this tab is on an old build — reload once to pick up
-   the latest. A sessionStorage guard prevents a reload loop if it can't recover. */
+/* Detect a newer build WITHOUT ever reloading on its own: fetch the freshest
+   index.html (bypassing cache) and compare the hashed JS filename it references
+   to the one actually running. If a newer build exists, we DON'T yank the page
+   out from under the user (which resets whatever they're mid-doing) — we just
+   raise an event so a small "Update now" banner appears and THEY choose when. */
+let updateNotified = false;
 async function ensureFreshBuild() {
   try {
+    if (updateNotified) return;
     const running = (import.meta.url.split("/").pop() || "").split("?")[0];
     if (!running) return;
     const res = await fetch("/?_=" + Date.now(), { cache: "no-store" });
@@ -16,17 +19,30 @@ async function ensureFreshBuild() {
     const m = html.match(/assets\/[A-Za-z0-9_.-]+\.js/);
     const latest = m ? m[0].split("/").pop() : null;
     if (latest && latest !== running) {
-      if (!sessionStorage.getItem("tcc:staleReload")) {
-        sessionStorage.setItem("tcc:staleReload", "1");
-        location.reload();
-      }
-    } else {
-      sessionStorage.removeItem("tcc:staleReload");
+      updateNotified = true;
+      window.dispatchEvent(new CustomEvent("tcc:update-available"));
     }
   } catch (e) { /* offline / blocked — ignore */ }
 }
 ensureFreshBuild();
 setInterval(ensureFreshBuild, 5 * 60 * 1000);
+
+function UpdateBanner() {
+  const [show, setShow] = useState(false);
+  useEffect(() => {
+    const h = () => setShow(true);
+    window.addEventListener("tcc:update-available", h);
+    return () => window.removeEventListener("tcc:update-available", h);
+  }, []);
+  if (!show) return null;
+  return (
+    <div style={{ position: "fixed", left: 12, right: 12, bottom: 12, zIndex: 9999, display: "flex", alignItems: "center", gap: 12, justifyContent: "center", flexWrap: "wrap", padding: "10px 14px", background: "#1E2630", border: "1px solid #F2BE6E", borderRadius: 12, boxShadow: "0 6px 24px rgba(0,0,0,0.45)" }}>
+      <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 13, color: "#F2BE6E" }}>🔄 A newer version is ready — your journal is saved.</span>
+      <button onClick={() => location.reload()} style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 13, fontWeight: 700, background: "#F2BE6E", border: "none", color: "#0F141A", borderRadius: 8, padding: "7px 14px", cursor: "pointer" }}>Update now</button>
+      <button onClick={() => setShow(false)} style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, background: "none", border: "none", color: "#95A0AD", cursor: "pointer" }}>later</button>
+    </div>
+  );
+}
 
 /* localStorage is per-browser: the journal you build on your phone is invisible
    on your laptop, and clearing site data wipes it. This bar is the way across. */
@@ -161,5 +177,6 @@ createRoot(document.getElementById("root")).render(
   <React.StrictMode>
     <BackupBar />
     <TradingCommandCenter />
+    <UpdateBanner />
   </React.StrictMode>
 );
