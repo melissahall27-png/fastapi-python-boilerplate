@@ -971,6 +971,13 @@ function ExamineNextTrade({watch,lockSym,prefill,showScan=true,idx,onRemove}){
           {moneyness && <span style={{color:/\bITM\b/i.test(moneyness)?"var(--bull)":/\bOTM\b/i.test(moneyness)?"var(--bear)":"var(--dim)"}}>{moneyness}</span>}
           {theta && <span style={{color:"var(--bear)"}}>θ {theta} <span style={{color:"var(--faint)"}}>time decay</span></span>}
         </div>}
+      {(() => {
+        const _side = dir==="Short" ? (plan&&plan.bear) : (plan&&plan.bull);
+        const _spot = (_side && _side.calc) ? num(_side.calc.entryLevel) : null;
+        const _k = parseFloat(String(strikeInfo).replace(/[^0-9.]/g,""));
+        if(!(_spot>0) || !(_k>0) || !(num(entry)>0)) return null;
+        return <StrikesToWatch spot={_spot} strike={_k} prem={num(entry)} dir={dir}/>;
+      })()}
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:8}}>
         <div>{lq("Entry $",D_.entry)}<input value={entry} onChange={e2=>setEntry(e2.target.value)} className="mono" placeholder="1.00" style={{...fld,width:"100%",padding:"8px 9px"}}/></div>
         <div>{lq("Stop $",D_.stop)}<input value={stop} onChange={e2=>setStop(e2.target.value)} className="mono" placeholder="0.55" style={{...fld,width:"100%",padding:"8px 9px"}}/></div>
@@ -6010,6 +6017,71 @@ function impliedVol(type,S,K,t,prem,r){
   const v=(lo+hi)/2; return (v>0.0005&&v<4.99)?v:null;
 }
 const PL_R=0.04;
+/* ---- Strike ladder: a few nearby strikes with estimated premium/delta/breakeven,
+   all calibrated from the ONE quoted contract so the whole ladder is internally
+   consistent. Only iv²·t drives BS pricing, so we fix a nominal t and back out the
+   iv that reproduces the quoted premium — no separate DTE needed. ---- */
+function ladderStep(S){ return S<25?0.5 : S<250?1 : S<600?2.5 : 5; }
+function roundToStep(x,step){ return Math.round((Math.round(x/step)*step)*100)/100; }
+function strikeLadder({spot,strike,prem,dir}){
+  const S=num(spot), K0=num(strike), P=num(prem);
+  const type=/put|short|down|bear/i.test(String(dir||""))?"put":"call";
+  if(!(S>0)||!(P>0)) return null;
+  const step=ladderStep(S);
+  const anchorK=K0>0?K0:roundToStep(S,step);
+  const t=5/365; // nominal — only iv²·t matters; iv is calibrated to the quoted premium
+  const iv=impliedVol(type,S,anchorK,t,P,PL_R);
+  if(!iv) return null;
+  const baseK=roundToStep(S,step);
+  const otm=type==="put"?-1:1; // OTM = higher strike for calls, lower for puts
+  const specs=[
+    {k:roundToStep(baseK-otm*step,step),tag:"ITM"},
+    {k:baseK,tag:"ATM"},
+    {k:roundToStep(baseK+otm*step,step),tag:"slightly OTM",sweet:true},
+    {k:roundToStep(baseK+otm*2*step,step),tag:"OTM"},
+  ];
+  const seen=new Set(), rows=[];
+  for(const sp of specs){
+    if(!(sp.k>0)||seen.has(sp.k)) continue; seen.add(sp.k);
+    const price=bsPrice(type,S,sp.k,t,iv,PL_R);
+    if(!(price>0)) continue;
+    const sq=Math.sqrt(t), sig=Math.max(iv,0.0001);
+    const d1=(Math.log(S/sp.k)+(PL_R+sig*sig/2)*t)/(sig*sq);
+    const dl=type==="put"?Math.abs(normCdf(d1)-1):normCdf(d1);
+    const be=type==="put"?sp.k-price:sp.k+price;
+    rows.push({k:sp.k,tag:sp.tag,sweet:!!sp.sweet,prem:price,delta:dl,be,cost:price*100});
+  }
+  return rows.length?{type,rows}:null;
+}
+function StrikesToWatch({spot,strike,prem,dir}){
+  const lad=useMemo(()=>strikeLadder({spot,strike,prem,dir}),[spot,strike,prem,dir]);
+  if(!lad) return null;
+  const isPut=lad.type==="put";
+  return (
+    <div style={{marginTop:2,marginBottom:10,padding:"12px 13px",background:"var(--bg)",border:"1px solid var(--line)",borderRadius:11}}>
+      <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:9}}>
+        <div className="eyebrow" style={{margin:0}}>Strikes to watch</div>
+        <Help align="left" text="A ladder of nearby strikes with estimated premium, delta and breakeven — all calibrated from the quoted contract so they're consistent with each other. The slightly-OTM strike (★) is highlighted: cheaper than at-the-money but still enough delta to move. Estimates — confirm the real numbers on your option chain."/>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(148px,1fr))",gap:8}}>
+        {lad.rows.map((r,i)=>(
+          <div key={i} style={{padding:"9px 11px",borderRadius:9,border:"1px solid "+(r.sweet?"var(--brass)":"var(--line2)"),background:r.sweet?"rgba(227,168,87,0.09)":"var(--bg3)"}}>
+            <div style={{display:"flex",alignItems:"baseline",gap:6,flexWrap:"wrap"}}>
+              <b className="mono" style={{fontSize:13.5,color:"var(--bone)"}}>${Math.round(r.k*100)/100} {isPut?"put":"call"}</b>
+              <span className="mono" style={{fontSize:10,color:r.sweet?"var(--brass)":"var(--faint)"}}>{r.tag}{r.sweet?" ★":""}</span>
+            </div>
+            <div className="mono" style={{fontSize:11.5,color:"var(--dim)",marginTop:5,lineHeight:1.65}}>
+              ~${r.prem.toFixed(2)} · Δ {r.delta.toFixed(2)}<br/>
+              {fmtMoney(r.cost)}/contract<br/>
+              <span style={{color:"var(--faint)"}}>B/E ${r.be.toFixed(2)}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="mono" style={{fontSize:11,color:"var(--faint)",marginTop:9,lineHeight:1.5}}>★ slightly OTM — cheaper than ATM, still enough delta to move. Estimates from the quoted contract; confirm on your chain.</div>
+    </div>
+  );
+}
 /* Pure payoff model — used by the P/L Lab AND embedded mini-curves in scans/charts. */
 function computePayoff(legsRaw, spot, ivPct){
   const S=num(spot), emIv=(num(ivPct)||0)/100;
