@@ -128,12 +128,17 @@ function mergeTradesById(a,b){
   }
   return [...m.values()];
 }
+/* Deletes must STICK across devices. A plain union-merge would resurrect any trade
+   the other device still has, so we keep tombstones: the ids you deleted. They sync
+   too, and we filter them out of every merge — on both devices. */
+function mergeIds(a,b){ return [...new Set([...(a||[]),...(b||[])])]; }
+function applyTombstones(trades,ids){ const s=new Set(ids||[]); return (trades||[]).filter(t=>t&&!s.has(t.id)); }
 /* Automatic: all of this user's devices share one fixed key, so sync "just works"
    with no code to type. (A stored custom code still overrides, if ever set.) */
 const AUTO_SYNC_KEY="edge-room-primary";
 function getSyncCode(){ try{ return (window.localStorage.getItem(TCC_PREFIX+"sync:code")||"").trim() || AUTO_SYNC_KEY; }catch(e){ return AUTO_SYNC_KEY; } }
 async function syncPull(code){
-  try{ const r=await fetch("/api/sync?code="+encodeURIComponent(code)); const j=await r.json().catch(()=>null); return (j&&j.ok&&Array.isArray(j.trades))?{trades:j.trades,ts:j.ts}:null; }catch(e){ return null; }
+  try{ const r=await fetch("/api/sync?code="+encodeURIComponent(code)); const j=await r.json().catch(()=>null); return (j&&j.ok&&Array.isArray(j.trades))?{trades:j.trades,deleted:Array.isArray(j.deleted)?j.deleted:[],ts:j.ts}:null; }catch(e){ return null; }
 }
 // The whole journal is pushed as ONE blob the server caps at ~900k chars. Base64
 // screenshots are big, so a few of them could blow the cap and make EVERY push
@@ -152,9 +157,9 @@ function trimForSync(code,trades){
   while(arr.length>1 && size(arr)>SYNC_MAX){ arr.shift(); } // pathological: even text over budget
   return {trades:arr,dropped};
 }
-async function syncPush(code,trades){
+async function syncPush(code,trades,deleted){
   const {trades:payload,dropped}=trimForSync(code,trades);
-  try{ const r=await fetch("/api/sync",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({code,trades:payload})}); const j=await r.json().catch(()=>({ok:false,reason:"bad-json"})); if(j) j.dropped=dropped; return j; }catch(e){ return {ok:false,reason:"err"}; }
+  try{ const r=await fetch("/api/sync",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({code,trades:payload,deleted:(deleted||[]).slice(-1000)})}); const j=await r.json().catch(()=>({ok:false,reason:"bad-json"})); if(j) j.dropped=dropped; return j; }catch(e){ return {ok:false,reason:"err"}; }
 }
 
 /* ---------- auto-run scans ----------
@@ -446,14 +451,23 @@ export default function TradingCommandCenter(){
   const [loaded,setLoaded]=useState(false);
   const [syncMsg,setSyncMsg]=useState("");
   const pushTimer=useRef(null);
+  // Tombstones: ids of trades deleted here, so a delete sticks across devices.
+  const [deletedIds,setDeletedIds]=useState([]);
+  const deletedRef=useRef([]);
+  useEffect(()=>{ deletedRef.current=deletedIds; },[deletedIds]);
+  useEffect(()=>{ if(loaded) sSet("journal:deleted",deletedIds); },[deletedIds,loaded]);
+  function recordDelete(id){ setDeletedIds(d=>d.includes(id)?d:[...d,id].slice(-1000)); }
   // Auto-sync: no code to type. Pull+push against the fixed key and report status.
   async function syncNow(){
     const c=getSyncCode();
     setSyncMsg("Checking…");
     const remote=await syncPull(c);
-    let base=trades;
-    if(remote&&Array.isArray(remote.trades)&&remote.trades.length){ base=mergeTradesById(trades,remote.trades); setTrades(base); }
-    const res=await syncPush(c,base);
+    let base=trades, tomb=deletedRef.current;
+    if(remote){
+      tomb=mergeIds(tomb,remote.deleted); if(tomb.length!==deletedRef.current.length) setDeletedIds(tomb);
+      if(Array.isArray(remote.trades)&&remote.trades.length){ base=applyTombstones(mergeTradesById(trades,remote.trades),tomb); setTrades(base); }
+    }
+    const res=await syncPush(c,base,tomb);
     if(res&&res.ok) setSyncMsg(res.dropped>0
       ? `✓ Auto-sync is ON — trades are linked across devices. (${res.dropped} older screenshot${res.dropped>1?"s":""} stay on the device that took ${res.dropped>1?"them":"it"} to keep sync fast.)`
       : "✓ Auto-sync is ON — your devices are linked. Log anywhere, it shows up everywhere.");
@@ -466,13 +480,17 @@ export default function TradingCommandCenter(){
   useEffect(()=>{
     if(!loaded) return; const c=getSyncCode();
     if(pushTimer.current) clearTimeout(pushTimer.current);
-    pushTimer.current=setTimeout(()=>{ syncPush(c,trades); }, 1500);
+    pushTimer.current=setTimeout(()=>{ syncPush(c,trades,deletedRef.current); }, 1500);
     return ()=>{ if(pushTimer.current) clearTimeout(pushTimer.current); };
-  },[trades,loaded]);
-  // Pull the other device's trades every 45s and merge them in.
+  },[trades,deletedIds,loaded]);
+  // Pull the other device's trades every 45s, merge them, and honor tombstones.
   useEffect(()=>{
     if(!loaded) return; const c=getSyncCode();
-    const id=setInterval(async()=>{ const remote=await syncPull(c); if(remote&&Array.isArray(remote.trades)){ setTrades(prev=>{ const merged=mergeTradesById(prev,remote.trades); return merged.length!==prev.length? merged: prev; }); } }, 45000);
+    const id=setInterval(async()=>{ const remote=await syncPull(c); if(!remote) return;
+      const tomb=mergeIds(deletedRef.current,remote.deleted);
+      if(tomb.length!==deletedRef.current.length) setDeletedIds(tomb);
+      if(Array.isArray(remote.trades)){ setTrades(prev=>{ const merged=applyTombstones(mergeTradesById(prev,remote.trades),tomb); return (merged.length!==prev.length || tomb.length!==deletedRef.current.length)? merged: prev; }); }
+    }, 45000);
     return ()=>clearInterval(id);
   },[loaded]);
   const [showHelp,setShowHelp]=useState(true);
@@ -558,10 +576,14 @@ export default function TradingCommandCenter(){
       if(!kb.some(k=>k.id===q.id)) kb=[q,...kb];
       await sSet("coach:kb",kb); await sSet("coach:threeQ",true);
     }
+    // Load tombstones and honor them from the first render (deleted trades stay gone).
+    let tomb=await sGet("journal:deleted"); if(!Array.isArray(tomb)) tomb=[];
+    t=applyTombstones(t,tomb);
     setTrades(t);
     // If this device is linked to a sync code, pull the other device's trades and merge.
     const _sc=getSyncCode();
-    if(_sc){ const remote=await syncPull(_sc); if(remote&&Array.isArray(remote.trades)&&remote.trades.length){ t=mergeTradesById(t,remote.trades); setTrades(t); } }
+    if(_sc){ const remote=await syncPull(_sc); if(remote){ tomb=mergeIds(tomb,remote.deleted); if(Array.isArray(remote.trades)&&remote.trades.length){ t=applyTombstones(mergeTradesById(t,remote.trades),tomb); setTrades(t); } } }
+    setDeletedIds(tomb);
     const w=await sGet("watchlist:tickers");
     let list = (Array.isArray(w)&&w.length) ? [...w] : [...DEFAULT_WATCH];
     const ver = await sGet("settings:watchVersion");
@@ -624,7 +646,7 @@ export default function TradingCommandCenter(){
         {tab==="guide" && <Guide/>}
         {tab==="today" && <Today trades={trades} setTrades={setTrades} watch={watch} quotes={quotes} setQuotes={setQuotes} goJournal={()=>setTab("journal")} goRunner={()=>setTab("runner")} />}
         {tab==="dash" && <Dashboard trades={trades} goJournal={()=>setTab("journal")} />}
-        {tab==="journal" && <Journal trades={trades} setTrades={setTrades} watch={watch} syncMsg={syncMsg} onSyncNow={syncNow} />}
+        {tab==="journal" && <Journal trades={trades} setTrades={setTrades} watch={watch} syncMsg={syncMsg} onSyncNow={syncNow} onDeleteTrade={recordDelete} />}
         {tab==="review" && <ReviewPanel trades={trades} />}
         {tab==="watch" && <Watchlist watch={watch} setWatch={setWatch} quotes={quotes} setQuotes={setQuotes} />}
         {tab==="strat" && <StratScanner watch={watch} />}
@@ -2344,7 +2366,7 @@ function SyncCard({syncMsg,onSyncNow}){
     </div>
   );
 }
-function Journal({trades,setTrades,watch,syncMsg,onSyncNow}){
+function Journal({trades,setTrades,watch,syncMsg,onSyncNow,onDeleteTrade}){
   const [d,setD]=useState(BLANK);
   const [filter,setFilter]=useState("all");
   const fileRef=useRef(null);
@@ -2382,7 +2404,7 @@ function Journal({trades,setTrades,watch,syncMsg,onSyncNow}){
     setAddErr(""); setAddOk(`Logged ${entry.ticker}${previewPnl!=null?` · ${fmtMoney(previewPnl)}`:""} — it's in your History below.`);
     setD({...BLANK,date:d.date});
   }
-  function del(id){ setTrades(t=>t.filter(x=>x.id!==id)); }
+  function del(id){ setTrades(t=>t.filter(x=>x.id!==id)); onDeleteTrade&&onDeleteTrade(id); }
   function togglePlan(id){ setTrades(t=>t.map(x=>x.id===id?{...x,planFollowed:!x.planFollowed}:x)); }
   function setSetup(id,v){ setTrades(t=>t.map(x=>x.id===id?{...x,setup:v}:x)); }
   function setReview(id,rev){ setTrades(t=>t.map(x=>x.id===id?{...x,review:rev}:x)); }
