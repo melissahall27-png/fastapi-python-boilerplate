@@ -2359,6 +2359,9 @@ function Journal({trades,setTrades,watch,syncMsg,onSyncNow}){
   function togglePlan(id){ setTrades(t=>t.map(x=>x.id===id?{...x,planFollowed:!x.planFollowed}:x)); }
   function setSetup(id,v){ setTrades(t=>t.map(x=>x.id===id?{...x,setup:v}:x)); }
   function setReview(id,rev){ setTrades(t=>t.map(x=>x.id===id?{...x,review:rev}:x)); }
+  // The 6 questions: three-state per question (✓ / ✗ / unanswered) stored on the
+  // trade itself, so it persists in journal:trades AND rides the cross-device sync.
+  function setSixQ(id,qid,val){ setTrades(t=>t.map(x=>{ if(x.id!==id) return x; const sq={...(x.sixQ||{})}; if(val==null) delete sq[qid]; else sq[qid]=val; return {...x,sixQ:sq}; })); }
   function setGrade(id,v){ setTrades(t=>t.map(x=>x.id===id?{...x,grade:v==="—"?undefined:v}:x)); }
   const [grading,setGrading]=useState(false); const [gerr,setGerr]=useState("");
   const [edgeHelp,setEdgeHelp]=useState(false);
@@ -2514,7 +2517,7 @@ function Journal({trades,setTrades,watch,syncMsg,onSyncNow}){
           {list.length===0
             ? <p style={{margin:0,color:"var(--dim)",fontSize:15}}>Nothing here yet. Your first logged trade starts the data set that tells you which triggers to keep taking.</p>
             : <div style={{display:"flex",flexDirection:"column",gap:8,maxHeight:520,overflow:"auto"}} className="scroll">
-                {list.map(t=><TradeRow key={t.id} t={t} onDel={()=>del(t.id)} onToggle={()=>togglePlan(t.id)} onSetSetup={(v)=>setSetup(t.id,v)} onSetGrade={(v)=>setGrade(t.id,v)} onSetReview={(rev)=>setReview(t.id,rev)}/>)}
+                {list.map(t=><TradeRow key={t.id} t={t} onDel={()=>del(t.id)} onToggle={()=>togglePlan(t.id)} onSetSetup={(v)=>setSetup(t.id,v)} onSetGrade={(v)=>setGrade(t.id,v)} onSetReview={(rev)=>setReview(t.id,rev)} onSetSixQ={(qid,val)=>setSixQ(t.id,qid,val)}/>)}
               </div>}
         </div>
       </div>
@@ -2580,6 +2583,15 @@ function EdgeRow({setup,v,rows}){
 }
 
 function gradeColor(g){ if(g==="A"||g==="B") return "var(--bull)"; if(g==="C") return "var(--brass)"; if(g==="D"||g==="F") return "var(--bear)"; return "var(--faint)"; }
+// The 6 questions — the discipline pipeline, as a ✓/✗ checklist on EVERY trade.
+const SIX_Q=[
+  {id:"q1",short:"Trigger",   q:"1. Real trigger — not anticipation or hope?"},
+  {id:"q2",short:"Stop-sized",q:"2. Sized off the stop (fixed % risk)?"},
+  {id:"q3",short:"Scaled",    q:"3. Scaled out / took profit into strength?"},
+  {id:"q4",short:"Strike/DTE",q:"4. Right strike & DTE (near-money, Δ 0.55–0.70)?"},
+  {id:"q5",short:"Closed 3:30",q:"5. Closed before the 0DTE 3:30 risk-off?"},
+  {id:"q6",short:"No zero",   q:"6. Never held the option to zero (had a stop)?"},
+];
 const GOOD_MOVES=["Waited for a real trigger","Near-money strike (Δ 0.55–0.70)","Sized off the stop","Scaled out into strength","Closed 0DTE before 3:30","Trend-aligned (EMA/VWAP)"];
 const LEAKS=["Far-OTM lotto strike","Premium too cheap (below floor)","Held into theta / expiration","No trigger — anticipated","No stop / no exit plan","Averaged down / chased"];
 const LEAK_LESSON={
@@ -2590,7 +2602,7 @@ const LEAK_LESSON={
   "No stop / no exit plan":"Size off the stop and define the exit BEFORE you enter — structure sets the risk, not the premium.",
   "Averaged down / chased":"Don't add to a loser or chase strength — you sized the risk once; adding breaks the plan.",
 };
-function TradeRow({t,onDel,onToggle,onSetSetup,onSetGrade,onSetReview}){
+function TradeRow({t,onDel,onToggle,onSetSetup,onSetGrade,onSetReview,onSetSixQ}){
   const p=computePnl(t);
   const [chat,setChat]=useState(false);
   const [good,setGood]=useState(()=>(t.review&&Array.isArray(t.review.good))?t.review.good:[]);
@@ -2628,6 +2640,14 @@ function TradeRow({t,onDel,onToggle,onSetSetup,onSetGrade,onSetReview}){
           {t.date} {t.entry&&`· in ${t.entry}`} {t.exit&&`→ out ${t.exit}`} {t.quantity&&`· ×${t.quantity}`}
         </span>
         <span onClick={onToggle} title="Tap to toggle plan followed" className="mono" style={{fontSize:12,cursor:"pointer",color: t.planFollowed?"var(--brass-dim)":"var(--bear)"}}>{t.planFollowed?"on plan ✓":"off plan ✗"}</span>
+      </div>
+      {/* The 6 questions — on every trade. Tap cycles unanswered · → ✓ → ✗ → · */}
+      <div style={{marginTop:8,display:"flex",gap:5,flexWrap:"wrap",alignItems:"center"}}>
+        <span className="mono" style={{fontSize:9.5,letterSpacing:"0.12em",color:"var(--faint)"}} title="The 6 questions — answer ✓ or ✗ on every trade">6Q</span>
+        {SIX_Q.map(q=>{ const v=(t.sixQ||{})[q.id]; const c=v===true?"var(--bull)":v===false?"var(--bear)":"var(--faint)"; const mark=v===true?"✓":v===false?"✗":"·";
+          return <button key={q.id} title={q.q} onClick={(e)=>{ e.stopPropagation(); onSetSixQ&&onSetSixQ(q.id, v===true?false:v===false?null:true); }}
+            style={{fontFamily:"'JetBrains Mono',monospace",fontSize:10.5,padding:"3px 7px",borderRadius:6,cursor:"pointer",border:"1px solid "+(v==null?"var(--line2)":c),background:v==null?"var(--bg2)":(v?"rgba(63,183,130,0.12)":"rgba(231,106,91,0.12)"),color:c}}>{q.short} {mark}</button>;
+        })}
       </div>
       {t.notes && <div style={{fontSize:13.5,color:"var(--dim)",marginTop:7,lineHeight:1.5}}>{t.notes}</div>}
       {t.img && <img src={t.img} alt="chart" style={{marginTop:8,maxWidth:"100%",maxHeight:200,borderRadius:8,border:"1px solid var(--line2)",display:"block"}}/>}
