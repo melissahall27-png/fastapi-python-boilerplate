@@ -110,6 +110,24 @@ async function sSet(key,val){
   catch(e){ mem[key] = val; }   // private mode / quota full -> session-only
 }
 
+/* ---------- cross-device journal sync (opt-in via a private code) ----------
+   Devices sharing the same code push/pull their trades through /api/sync (a
+   cloud KV store). Trades are merged by id (union), so both devices accumulate
+   everything. Images are stripped from the pushed copy to keep it small — the
+   trade text/numbers are what sync; screenshots stay on the device that took them. */
+function mergeTradesById(a,b){
+  const m=new Map();
+  for(const t of [...(a||[]),...(b||[])]){ if(t&&t.id){ const ex=m.get(t.id); if(!ex || Object.keys(t).length>=Object.keys(ex).length) m.set(t.id,t); } }
+  return [...m.values()];
+}
+function getSyncCode(){ try{ return (window.localStorage.getItem(TCC_PREFIX+"sync:code")||"").trim(); }catch(e){ return ""; } }
+async function syncPull(code){
+  try{ const r=await fetch("/api/sync?code="+encodeURIComponent(code)); const j=await r.json().catch(()=>null); return (j&&j.ok&&Array.isArray(j.trades))?{trades:j.trades,ts:j.ts}:null; }catch(e){ return null; }
+}
+async function syncPush(code,trades){
+  try{ const slim=(trades||[]).map(t=>{ const {img,...rest}=t; return rest; }); const r=await fetch("/api/sync",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({code,trades:slim})}); return await r.json().catch(()=>({ok:false,reason:"bad-json"})); }catch(e){ return {ok:false,reason:"err"}; }
+}
+
 /* ---------- auto-run scans ----------
    Prices are free (Yahoo) and refresh on their own, but each SCAN is a paid AI
    call, so scans never auto-run unless the user turns ⏱ Auto ON. When it's on, a
@@ -397,6 +415,38 @@ export default function TradingCommandCenter(){
   const [watch,setWatch]=useState(DEFAULT_WATCH);
   const [quotes,setQuotes]=useState({});
   const [loaded,setLoaded]=useState(false);
+  const [syncOn,setSyncOn]=useState(false);
+  const [syncCodeVal,setSyncCodeVal]=useState("");
+  const [syncMsg,setSyncMsg]=useState("");
+  const pushTimer=useRef(null);
+  useEffect(()=>{ const c=getSyncCode(); if(c){ setSyncCodeVal(c); setSyncOn(true); } },[]);
+  async function connectSync(raw){
+    const code=String(raw||"").trim().toLowerCase().replace(/[^a-z0-9_-]/g,"").slice(0,64);
+    try{ window.localStorage.setItem(TCC_PREFIX+"sync:code",code); }catch(e){}
+    setSyncCodeVal(code); setSyncOn(!!code);
+    if(!code){ setSyncMsg("Sync turned off — this device is local again."); return; }
+    setSyncMsg("Connecting…");
+    const remote=await syncPull(code);
+    let base=trades;
+    if(remote&&Array.isArray(remote.trades)&&remote.trades.length){ base=mergeTradesById(trades,remote.trades); setTrades(base); }
+    const res=await syncPush(code,base);
+    if(res&&res.ok) setSyncMsg("✓ Synced. Enter this SAME code on your other device and your trades will follow you.");
+    else if(res&&res.reason==="not-configured") setSyncMsg("Saved on this device — but the cloud store isn't connected yet. One-time setup needed (ask in chat).");
+    else setSyncMsg("Saved locally — couldn't reach the cloud store yet. Check the setup.");
+  }
+  // Push my trades to the cloud shortly after they change (debounced).
+  useEffect(()=>{
+    if(!loaded || !syncOn) return; const c=getSyncCode(); if(!c) return;
+    if(pushTimer.current) clearTimeout(pushTimer.current);
+    pushTimer.current=setTimeout(()=>{ syncPush(c,trades); }, 1500);
+    return ()=>{ if(pushTimer.current) clearTimeout(pushTimer.current); };
+  },[trades,loaded,syncOn]);
+  // Pull the other device's trades every 45s and merge them in.
+  useEffect(()=>{
+    if(!loaded || !syncOn) return; const c=getSyncCode(); if(!c) return;
+    const id=setInterval(async()=>{ const remote=await syncPull(c); if(remote&&Array.isArray(remote.trades)){ setTrades(prev=>{ const merged=mergeTradesById(prev,remote.trades); return merged.length!==prev.length? merged: prev; }); } }, 45000);
+    return ()=>clearInterval(id);
+  },[loaded,syncOn]);
   const [showHelp,setShowHelp]=useState(true);
   useEffect(()=>{ (async()=>{ try{ const s=await sGet("ui:showHelp"); if(s===false) setShowHelp(false); }catch(e){} })(); },[]);
   useEffect(()=>{ sSet("ui:showHelp",showHelp); },[showHelp]);
@@ -481,6 +531,9 @@ export default function TradingCommandCenter(){
       await sSet("coach:kb",kb); await sSet("coach:threeQ",true);
     }
     setTrades(t);
+    // If this device is linked to a sync code, pull the other device's trades and merge.
+    const _sc=getSyncCode();
+    if(_sc){ const remote=await syncPull(_sc); if(remote&&Array.isArray(remote.trades)&&remote.trades.length){ t=mergeTradesById(t,remote.trades); setTrades(t); } }
     const w=await sGet("watchlist:tickers");
     let list = (Array.isArray(w)&&w.length) ? [...w] : [...DEFAULT_WATCH];
     const ver = await sGet("settings:watchVersion");
@@ -543,7 +596,7 @@ export default function TradingCommandCenter(){
         {tab==="guide" && <Guide/>}
         {tab==="today" && <Today trades={trades} setTrades={setTrades} watch={watch} quotes={quotes} setQuotes={setQuotes} goJournal={()=>setTab("journal")} goRunner={()=>setTab("runner")} />}
         {tab==="dash" && <Dashboard trades={trades} goJournal={()=>setTab("journal")} />}
-        {tab==="journal" && <Journal trades={trades} setTrades={setTrades} watch={watch} />}
+        {tab==="journal" && <Journal trades={trades} setTrades={setTrades} watch={watch} syncCodeVal={syncCodeVal} syncOn={syncOn} syncMsg={syncMsg} onConnectSync={connectSync} />}
         {tab==="review" && <ReviewPanel trades={trades} />}
         {tab==="watch" && <Watchlist watch={watch} setWatch={setWatch} quotes={quotes} setQuotes={setQuotes} />}
         {tab==="strat" && <StratScanner watch={watch} />}
@@ -2245,7 +2298,27 @@ function Stat({label,value,sub,tone,help}){
 /* ============================ JOURNAL ============================ */
 const BLANK={date:todayISO(),ticker:"",instrument:"Stock",direction:"Long",optType:"Call",strike:"",expiry:"",entry:"",exit:"",quantity:"",multiplier:"",setup:"2-2 continuation",timeframe:"15m",horizon:"Day",pnlManual:"",planFollowed:true,emotion:"On plan",notes:"",img:null};
 
-function Journal({trades,setTrades,watch}){
+function SyncCard({syncCodeVal,syncOn,syncMsg,onConnectSync}){
+  const [code,setCode]=useState(syncCodeVal||"");
+  useEffect(()=>{ setCode(syncCodeVal||""); },[syncCodeVal]);
+  return (
+    <div className="card" style={{padding:16,marginBottom:14,borderColor:syncOn?"var(--bull)":"var(--line)"}}>
+      <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:6}}>
+        <div className="eyebrow" style={{margin:0}}>Cross-device sync</div>
+        <Help text="Enter the SAME private code on your phone and your desktop and your trades follow you between them — log on the phone, review on the laptop. Trades merge (nothing overwrites). Screenshots stay on the device that took them. Needs a one-time cloud-store hookup on your Vercel account."/>
+        {syncOn && <span className="mono" style={{marginLeft:"auto",fontSize:11,color:"var(--bull)",border:"1px solid var(--bull)",borderRadius:6,padding:"2px 7px"}}>● linked</span>}
+      </div>
+      <div style={{fontSize:13,color:"var(--dim)",lineHeight:1.6,marginBottom:10}}>Type a private code (any word only you know) on <b style={{color:"var(--bone)"}}>every</b> device — same code = same journal. Log on your phone, see it on desktop.</div>
+      <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+        <input value={code} onChange={e=>setCode(e.target.value)} placeholder="e.g. edge-room-mel" className="mono" style={{flex:"1 1 180px",padding:"9px 11px",fontSize:14}}/>
+        <button className="btn btn-primary" onClick={()=>onConnectSync(code)} style={{padding:"9px 15px",fontSize:13.5}}>{syncOn?"Update code":"Link this device"}</button>
+        {syncOn && <button className="btn" onClick={()=>onConnectSync("")} style={{padding:"9px 13px",fontSize:12.5,color:"var(--faint)"}}>Turn off</button>}
+      </div>
+      {syncMsg && <div className="mono" style={{fontSize:12.5,color:/✓|Synced/.test(syncMsg)?"var(--bull)":/setup|isn't connected|couldn/.test(syncMsg)?"var(--brass)":"var(--dim)",marginTop:10,lineHeight:1.5}}>{syncMsg}</div>}
+    </div>
+  );
+}
+function Journal({trades,setTrades,watch,syncCodeVal,syncOn,syncMsg,onConnectSync}){
   const [d,setD]=useState(BLANK);
   const [filter,setFilter]=useState("all");
   const fileRef=useRef(null);
@@ -2313,6 +2386,8 @@ function Journal({trades,setTrades,watch}){
   const setupRows=Object.entries(bySetup).sort((a,b)=>b[1].pnl-a[1].pnl);
 
   return (
+    <div>
+    <SyncCard syncCodeVal={syncCodeVal} syncOn={syncOn} syncMsg={syncMsg} onConnectSync={onConnectSync}/>
     <div style={{display:"grid",gridTemplateColumns:"minmax(0,360px) 1fr",gap:18,alignItems:"start"}} className="jgrid">
       <style>{`@media(max-width:820px){.jgrid{grid-template-columns:1fr !important;}}`}</style>
 
@@ -2444,6 +2519,7 @@ function Journal({trades,setTrades,watch}){
               </div>}
         </div>
       </div>
+    </div>
     </div>
   );
 }
