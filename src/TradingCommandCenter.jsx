@@ -2286,6 +2286,7 @@ function Journal({trades,setTrades,watch}){
   function del(id){ setTrades(t=>t.filter(x=>x.id!==id)); }
   function togglePlan(id){ setTrades(t=>t.map(x=>x.id===id?{...x,planFollowed:!x.planFollowed}:x)); }
   function setSetup(id,v){ setTrades(t=>t.map(x=>x.id===id?{...x,setup:v}:x)); }
+  function setReview(id,rev){ setTrades(t=>t.map(x=>x.id===id?{...x,review:rev}:x)); }
   function setGrade(id,v){ setTrades(t=>t.map(x=>x.id===id?{...x,grade:v==="—"?undefined:v}:x)); }
   const [grading,setGrading]=useState(false); const [gerr,setGerr]=useState("");
   const [edgeHelp,setEdgeHelp]=useState(false);
@@ -2439,7 +2440,7 @@ function Journal({trades,setTrades,watch}){
           {list.length===0
             ? <p style={{margin:0,color:"var(--dim)",fontSize:15}}>Nothing here yet. Your first logged trade starts the data set that tells you which triggers to keep taking.</p>
             : <div style={{display:"flex",flexDirection:"column",gap:8,maxHeight:520,overflow:"auto"}} className="scroll">
-                {list.map(t=><TradeRow key={t.id} t={t} onDel={()=>del(t.id)} onToggle={()=>togglePlan(t.id)} onSetSetup={(v)=>setSetup(t.id,v)} onSetGrade={(v)=>setGrade(t.id,v)}/>)}
+                {list.map(t=><TradeRow key={t.id} t={t} onDel={()=>del(t.id)} onToggle={()=>togglePlan(t.id)} onSetSetup={(v)=>setSetup(t.id,v)} onSetGrade={(v)=>setGrade(t.id,v)} onSetReview={(rev)=>setReview(t.id,rev)}/>)}
               </div>}
         </div>
       </div>
@@ -2504,12 +2505,30 @@ function EdgeRow({setup,v,rows}){
 }
 
 function gradeColor(g){ if(g==="A"||g==="B") return "var(--bull)"; if(g==="C") return "var(--brass)"; if(g==="D"||g==="F") return "var(--bear)"; return "var(--faint)"; }
-function TradeRow({t,onDel,onToggle,onSetSetup,onSetGrade}){
+const GOOD_MOVES=["Waited for a real trigger","Near-money strike (Δ 0.55–0.70)","Sized off the stop","Scaled out into strength","Closed 0DTE before 3:30","Trend-aligned (EMA/VWAP)"];
+const LEAKS=["Far-OTM lotto strike","Premium too cheap (below floor)","Held into theta / expiration","No trigger — anticipated","No stop / no exit plan","Averaged down / chased"];
+const LEAK_LESSON={
+  "Far-OTM lotto strike":"Near-money strike — far-OTM has tiny delta, so a move barely moves your option, and it never gains real (intrinsic) value.",
+  "Premium too cheap (below floor)":"Below-floor premium ($0.10–0.20) is all time value with wide spreads — it decays before the move can pay you.",
+  "Held into theta / expiration":"Theta + DTE — cheap short-dated options melt fastest into expiration. Cut them; don't hold hope.",
+  "No trigger — anticipated":"Trigger, not hope — no break of the level, no trade. Anticipation is how you get chopped.",
+  "No stop / no exit plan":"Size off the stop and define the exit BEFORE you enter — structure sets the risk, not the premium.",
+  "Averaged down / chased":"Don't add to a loser or chase strength — you sized the risk once; adding breaks the plan.",
+};
+function TradeRow({t,onDel,onToggle,onSetSetup,onSetGrade,onSetReview}){
   const p=computePnl(t);
   const [chat,setChat]=useState(false);
+  const [good,setGood]=useState(()=>(t.review&&Array.isArray(t.review.good))?t.review.good:[]);
+  const [bad,setBad]=useState(()=>(t.review&&Array.isArray(t.review.bad))?t.review.bad:[]);
+  const [savedMsg,setSavedMsg]=useState("");
   const detail = t.instrument==="Option" ? `${t.optType} ${t.strike||""} ${t.expiry||""}`.trim() : t.instrument;
+  const reviewed = !!(t.review && ((t.review.good&&t.review.good.length)||(t.review.bad&&t.review.bad.length)));
+  const toggle=(arr,set,item)=>{ set(arr.includes(item)?arr.filter(x=>x!==item):[...arr,item]); setSavedMsg(""); };
+  const saveReview=()=>{ onSetReview&&onSetReview({good,bad,ts:Date.now()}); setSavedMsg("✓ Saved to this trade — the lesson stays pinned here."); };
+  const lessons=bad.map(x=>LEAK_LESSON[x]).filter(Boolean);
+  const chip=(active,tone)=>({fontFamily:"'JetBrains Mono',monospace",fontSize:11.5,textAlign:"left",padding:"6px 9px",borderRadius:7,cursor:"pointer",lineHeight:1.35,border:"1px solid "+(active?tone:"var(--line2)"),background:active?(tone==="var(--bull)"?"rgba(63,183,130,0.12)":"rgba(231,106,91,0.12)"):"var(--bg2)",color:active?tone:"var(--dim)"});
   return (
-    <div style={{padding:"11px 13px",background:"var(--bg)",borderRadius:10,border:"1px solid var(--line)"}}>
+    <div style={{padding:"11px 13px",background:"var(--bg)",borderRadius:10,border:"1px solid "+(reviewed?"var(--brass-dim)":"var(--line)")}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10}}>
         <div style={{display:"flex",alignItems:"center",gap:9,flexWrap:"wrap"}}>
           <span className="mono" style={{fontWeight:700,fontSize:15.5}}>{t.ticker}</span>
@@ -2537,12 +2556,44 @@ function TradeRow({t,onDel,onToggle,onSetSetup,onSetGrade}){
       </div>
       {t.notes && <div style={{fontSize:13.5,color:"var(--dim)",marginTop:7,lineHeight:1.5}}>{t.notes}</div>}
       {t.img && <img src={t.img} alt="chart" style={{marginTop:8,maxWidth:"100%",maxHeight:200,borderRadius:8,border:"1px solid var(--line2)",display:"block"}}/>}
+      {reviewed && !chat && <div style={{marginTop:8,display:"flex",gap:7,flexWrap:"wrap",alignItems:"center"}}>
+        {good.length>0 && <span className="mono" style={{fontSize:11,color:"var(--bull)",border:"1px solid var(--bull)",borderRadius:6,padding:"2px 7px"}}>✓ {good.length} good</span>}
+        {bad.length>0 && <span className="mono" style={{fontSize:11,color:"var(--bear)",border:"1px solid var(--bear)",borderRadius:6,padding:"2px 7px"}}>✕ {bad.length} leak{bad.length>1?"s":""}</span>}
+        <span className="mono" style={{fontSize:10.5,color:"var(--faint)"}}>reviewed</span>
+      </div>}
       <button onClick={()=>setChat(c=>!c)} className="mono"
-        style={{marginTop:9,background:"transparent",border:"1px solid var(--line2)",color:chat?"var(--brass)":"var(--focus)",borderRadius:8,padding:"6px 11px",fontSize:12.5,fontWeight:600,cursor:"pointer"}}>
-        {chat?"▾ Close chat":"💬 Ask about this trade · attach a screenshot"}
+        style={{marginTop:9,background:"transparent",border:"1px solid "+(reviewed?"var(--brass-dim)":"var(--line2)"),color:chat?"var(--brass)":"var(--focus)",borderRadius:8,padding:"6px 11px",fontSize:12.5,fontWeight:600,cursor:"pointer"}}>
+        {chat?"▾ Close review":"📝 Review this trade · good vs. bad moves"}
       </button>
       {chat &&
         <div style={{marginTop:10,padding:12,background:"var(--bg2)",border:"1px solid var(--line)",borderRadius:11}}>
+          <div className="eyebrow" style={{marginBottom:8}}>Good moves &amp; leaks — tap what applied</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:11}}>
+            <div>
+              <div className="mono" style={{fontSize:11,color:"var(--bull)",marginBottom:6,fontWeight:700,letterSpacing:"0.06em"}}>✓ GOOD MOVES</div>
+              <div style={{display:"flex",flexDirection:"column",gap:5}}>
+                {GOOD_MOVES.map(m=><button key={m} onClick={()=>toggle(good,setGood,m)} style={chip(good.includes(m),"var(--bull)")}>{good.includes(m)?"✓ ":""}{m}</button>)}
+              </div>
+            </div>
+            <div>
+              <div className="mono" style={{fontSize:11,color:"var(--bear)",marginBottom:6,fontWeight:700,letterSpacing:"0.06em"}}>✕ LEAKS (BAD MOVES)</div>
+              <div style={{display:"flex",flexDirection:"column",gap:5}}>
+                {LEAKS.map(m=><button key={m} onClick={()=>toggle(bad,setBad,m)} style={chip(bad.includes(m),"var(--bear)")}>{bad.includes(m)?"✕ ":""}{m}</button>)}
+              </div>
+            </div>
+          </div>
+          <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:(lessons.length||savedMsg)?11:2}}>
+            <button className="btn-primary btn" onClick={saveReview} style={{padding:"7px 13px",fontSize:13}}>💾 Save to trade</button>
+            {savedMsg && <span className="mono" style={{fontSize:12,color:"var(--bull)"}}>{savedMsg}</span>}
+          </div>
+          {lessons.length>0 &&
+            <div style={{padding:"11px 13px",background:"rgba(227,168,87,0.08)",border:"1px solid var(--brass)",borderRadius:10,marginBottom:11}}>
+              <div className="eyebrow" style={{margin:"0 0 6px",color:"var(--brass)"}}>📖 The teaching — why these hurt</div>
+              <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                {lessons.map((l,i)=><div key={i} style={{fontSize:12.5,color:"var(--comp)",lineHeight:1.55}}>• {l}</div>)}
+              </div>
+              <div className="mono" style={{fontSize:11,color:"var(--faint)",marginTop:7}}>Full version in Playbook → the options &amp; time-decay cards and the glossary.</div>
+            </div>}
           <ChatBox storageKey={"tradechat:"+t.id} system={buildTradeSystem(t)}
             placeholder="Ask about this trade…"
             starters={["Grade this trade's structure","What should I have done differently?","What did I do right?"]}
