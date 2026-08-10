@@ -3395,12 +3395,16 @@ function AskCoach({ title="Ask the coach", intro, context="", placeholder="Ask t
 }
 
 /* ---------- Scan journal: auto-logs every scan, matches the trades you took, scores each scanner ---------- */
-async function logScan(source, syms, top){
+async function logScan(source, syms, top, batchId){
   try{
     const log = await sGet("scan:log") || [];
-    const entry = { id: Date.now()+"-"+Math.random().toString(36).slice(2,6), ts: Date.now(), date: todayISO(),
+    const arr = Array.isArray(log) ? log : [];
+    // If this save carries a batchId, drop any existing entry for the same batch
+    // so an explicit "Save to Scans" re-write is idempotent (no duplicate rows).
+    const base = batchId!=null ? arr.filter(e=>e && e.batchId!==batchId) : arr;
+    const entry = { id: Date.now()+"-"+Math.random().toString(36).slice(2,6), batchId: batchId!=null?batchId:null, ts: Date.now(), date: todayISO(),
       source, syms:(syms||[]).map(s=>String(s||"").toUpperCase()).filter(Boolean).slice(0,40), top:(top||[]).slice(0,40) };
-    await sSet("scan:log", [entry, ...(Array.isArray(log)?log:[])].slice(0,400));
+    await sSet("scan:log", [entry, ...base].slice(0,400));
   }catch(e){}
 }
 function srcTone(s){ return s==="Runner"?"var(--brass)":s==="Bias scan"?"var(--focus)":(s==="Goal plays"||s==="Account plays")?"var(--bull)":"var(--comp)"; }
@@ -3562,9 +3566,21 @@ function RunnerScan({watch}){
   const [minScore,setMinScore]=useState(0);
   const [chart,setChart]=useState(null);
   const [ready,setReady]=useState(false);
+  const [saved,setSaved]=useState("");
 
   useEffect(()=>{ (async()=>{ const s=await sGet("runner_scan"); if(s&&Array.isArray(s.rows)){ setRows(s.rows); setWhen(s.when||null); } setReady(true); })(); },[]);
   useAutoScan(ready, when, loading, ()=>scan());
+
+  // Explicit save: write EVERY ticker's full detail to the Scans journal. Uses the
+  // scan's timestamp as a batch id so re-saving updates that entry instead of
+  // duplicating it — a guaranteed, one-tap way to move the whole scan to Scans.
+  async function saveToScans(){
+    if(!rows || !rows.length){ setSaved("Run a scan first."); return; }
+    const t = when || Date.now();
+    await logScan("Runner", rows.map(r=>r.s),
+      rows.map(r=>({s:r.s,dir:r.dir,px:num(r.px),score:runnerScore(r),why:r.why,trig:num(r.trig),inval:num(r.inval),atr:num(r.atr),ivr:r.ivr!=null?num(r.ivr):null,liq:r.liq,ev:r.ev})), t);
+    setSaved(`Saved all ${rows.length} tickers — full detail is in the Scans tab.`);
+  }
 
   async function scan(){
     if(loading) return;
@@ -3586,7 +3602,7 @@ dir="up"|"down". px=last close. atr=avg DAILY range in $ (~14d). comp/lvl/cat/fu
         if(Array.isArray(j)) all=all.concat(j.filter(x=>x&&x.s));
       }
       setProg("");
-      if(all.length){ all.sort((a,b)=>runnerScore(b)-runnerScore(a)); setRows(all); const t=Date.now(); setWhen(t); sSet("runner_scan",{rows:all,when:t}); logScan("Runner", all.map(r=>r.s), all.map(r=>({s:r.s,dir:r.dir,px:num(r.px),score:runnerScore(r),why:r.why,trig:num(r.trig),inval:num(r.inval),atr:num(r.atr),ivr:r.ivr!=null?num(r.ivr):null,liq:r.liq,ev:r.ev}))); }
+      if(all.length){ all.sort((a,b)=>runnerScore(b)-runnerScore(a)); setRows(all); const t=Date.now(); setWhen(t); setSaved(""); sSet("runner_scan",{rows:all,when:t}); logScan("Runner", all.map(r=>r.s), all.map(r=>({s:r.s,dir:r.dir,px:num(r.px),score:runnerScore(r),why:r.why,trig:num(r.trig),inval:num(r.inval),atr:num(r.atr),ivr:r.ivr!=null?num(r.ivr):null,liq:r.liq,ev:r.ev})), t); }
       else setErr("Nothing came back — tap again to retry.");
     }catch(e){ setProg(""); setErr(aiErr(e,"Scan")); }
     setLoading(false);
@@ -3647,6 +3663,11 @@ dir="up"|"down". px=last close. atr=avg DAILY range in $ (~14d). comp/lvl/cat/fu
             </div>))}
         </div>
       </div>
+
+      {rows && rows.length>0 && <div className="card" style={{padding:14,marginBottom:14,display:"flex",gap:12,alignItems:"center",flexWrap:"wrap",borderColor:"var(--brass-dim)"}}>
+        <button className="btn btn-primary" onClick={saveToScans} style={{padding:"9px 16px",fontSize:14}}>💾 Save full scan to Scans</button>
+        <span style={{fontSize:13,color:saved?"var(--bull)":"var(--dim)",lineHeight:1.5}}>{saved || `Moves all ${rows.length} tickers — every field — into your Scans journal.`}</span>
+      </div>}
 
       {rows && <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:14,alignItems:"center"}}>
         <span className="eyebrow">Show</span>
