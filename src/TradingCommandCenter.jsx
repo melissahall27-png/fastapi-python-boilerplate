@@ -114,7 +114,7 @@ async function sSet(key,val){
    Devices sharing the same code push/pull their trades through /api/sync (a
    cloud KV store). Trades are merged by id (union), so both devices accumulate
    everything. Images are stripped from the pushed copy to keep it small — the
-   trade text/numbers are what sync; screenshots stay on the device that took them. */
+   trade text/numbers AND screenshots sync, so an uploaded shot shows everywhere. */
 function mergeTradesById(a,b){
   const m=new Map();
   for(const t of [...(a||[]),...(b||[])]){ if(t&&t.id){ const ex=m.get(t.id); if(!ex || Object.keys(t).length>=Object.keys(ex).length) m.set(t.id,t); } }
@@ -128,7 +128,8 @@ async function syncPull(code){
   try{ const r=await fetch("/api/sync?code="+encodeURIComponent(code)); const j=await r.json().catch(()=>null); return (j&&j.ok&&Array.isArray(j.trades))?{trades:j.trades,ts:j.ts}:null; }catch(e){ return null; }
 }
 async function syncPush(code,trades){
-  try{ const slim=(trades||[]).map(t=>{ const {img,...rest}=t; return rest; }); const r=await fetch("/api/sync",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({code,trades:slim})}); return await r.json().catch(()=>({ok:false,reason:"bad-json"})); }catch(e){ return {ok:false,reason:"err"}; }
+  // Include screenshots (img) so an uploaded screenshot shows on every device too.
+  try{ const r=await fetch("/api/sync",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({code,trades:(trades||[])})}); return await r.json().catch(()=>({ok:false,reason:"bad-json"})); }catch(e){ return {ok:false,reason:"err"}; }
 }
 
 /* ---------- auto-run scans ----------
@@ -2305,7 +2306,7 @@ function SyncCard({syncMsg,onSyncNow}){
     <div className="card" style={{padding:16,marginBottom:14,borderColor:ok?"var(--bull)":needsSetup?"var(--brass-dim)":"var(--line)"}}>
       <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:6}}>
         <div className="eyebrow" style={{margin:0}}>Cross-device sync</div>
-        <Help text="Your journal syncs across all your devices automatically — log on your phone, review on desktop, no codes to type. Trades merge (nothing overwrites); screenshots stay on the device that took them. It rides on one free storage box connected to your Vercel project (a one-time hookup)."/>
+        <Help text="Your journal syncs across all your devices automatically — log on your phone, review on desktop, no codes to type. Trades AND their screenshots merge across devices (nothing overwrites). It rides on one free storage box connected to your Vercel project (a one-time hookup)."/>
         <span className="mono" style={{marginLeft:"auto",fontSize:11,color:ok?"var(--bull)":"var(--brass)",border:"1px solid "+(ok?"var(--bull)":"var(--brass-dim)"),borderRadius:6,padding:"2px 7px"}}>{ok?"● auto · linked":"● setup needed"}</span>
       </div>
       <div style={{fontSize:13,color:"var(--dim)",lineHeight:1.6,marginBottom:10}}>Automatic — <b style={{color:"var(--bone)"}}>no code to type.</b> Every device signed into this app shares the same journal. Log on your phone, it shows up on desktop on its own.</div>
