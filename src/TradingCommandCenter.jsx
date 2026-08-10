@@ -121,8 +121,10 @@ function mergeTradesById(a,b){
     if(!t||!t.id) continue;
     const ex=m.get(t.id);
     if(!ex){ m.set(t.id,{...t}); continue; }
-    // richer copy wins (existing behavior), but NEVER lose a screenshot either side still holds
-    const win = (Object.keys(t).length>=Object.keys(ex).length) ? {...t} : {...ex};
+    // Keep the NEWER edit (updatedAt); fall back to the richer copy for legacy
+    // trades with no timestamp. Either way, NEVER lose a screenshot either side holds.
+    const ta=t.updatedAt||0, ea=ex.updatedAt||0;
+    const win = ta!==ea ? (ta>ea?{...t}:{...ex}) : ((Object.keys(t).length>=Object.keys(ex).length)?{...t}:{...ex});
     if(!win.img){ const keepImg=t.img||ex.img; if(keepImg) win.img=keepImg; }
     m.set(t.id,win);
   }
@@ -2397,21 +2399,24 @@ function Journal({trades,setTrades,watch,syncMsg,onSyncNow,onDeleteTrade}){
     if(shotRef.current) shotRef.current.value="";
   }
 
+  // Stamp every mutation so the cross-device merge can keep the NEWER edit instead
+  // of letting a stale copy from the other device clobber it.
+  const stamp=x=>({...x,updatedAt:Date.now()});
   function add(){
     if(!d.ticker.trim()){ setAddOk(""); setAddErr("Add a ticker first — it's the one required field. Type it in the Ticker box above (e.g. IWM), then tap Log trade."); return; }
-    const entry={...d,ticker:d.ticker.toUpperCase().trim(),id:Date.now()+"-"+Math.random().toString(36).slice(2,6)};
+    const entry={...d,ticker:d.ticker.toUpperCase().trim(),id:Date.now()+"-"+Math.random().toString(36).slice(2,6),updatedAt:Date.now()};
     setTrades(t=>[...t,entry]);
     setAddErr(""); setAddOk(`Logged ${entry.ticker}${previewPnl!=null?` · ${fmtMoney(previewPnl)}`:""} — it's in your History below.`);
     setD({...BLANK,date:d.date});
   }
   function del(id){ setTrades(t=>t.filter(x=>x.id!==id)); onDeleteTrade&&onDeleteTrade(id); }
-  function togglePlan(id){ setTrades(t=>t.map(x=>x.id===id?{...x,planFollowed:!x.planFollowed}:x)); }
-  function setSetup(id,v){ setTrades(t=>t.map(x=>x.id===id?{...x,setup:v}:x)); }
-  function setReview(id,rev){ setTrades(t=>t.map(x=>x.id===id?{...x,review:rev}:x)); }
+  function togglePlan(id){ setTrades(t=>t.map(x=>x.id===id?stamp({...x,planFollowed:!x.planFollowed}):x)); }
+  function setSetup(id,v){ setTrades(t=>t.map(x=>x.id===id?stamp({...x,setup:v}):x)); }
+  function setReview(id,rev){ setTrades(t=>t.map(x=>x.id===id?stamp({...x,review:rev}):x)); }
   // The 6 questions: three-state per question (✓ / ✗ / unanswered) stored on the
   // trade itself, so it persists in journal:trades AND rides the cross-device sync.
-  function setSixQ(id,qid,val){ setTrades(t=>t.map(x=>{ if(x.id!==id) return x; const sq={...(x.sixQ||{})}; if(val==null) delete sq[qid]; else sq[qid]=val; return {...x,sixQ:sq}; })); }
-  function setGrade(id,v){ setTrades(t=>t.map(x=>x.id===id?{...x,grade:v==="—"?undefined:v}:x)); }
+  function setSixQ(id,qid,val){ setTrades(t=>t.map(x=>{ if(x.id!==id) return x; const sq={...(x.sixQ||{})}; if(val==null) delete sq[qid]; else sq[qid]=val; return stamp({...x,sixQ:sq}); })); }
+  function setGrade(id,v){ setTrades(t=>t.map(x=>x.id===id?stamp({...x,grade:v==="—"?undefined:v}):x)); }
   const [grading,setGrading]=useState(false); const [gerr,setGerr]=useState("");
   const [edgeHelp,setEdgeHelp]=useState(false);
   async function autoGrade(){
