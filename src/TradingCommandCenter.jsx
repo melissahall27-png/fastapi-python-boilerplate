@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from "react";
+import React, { useState, useEffect, useRef, useMemo, useSyncExternalStore } from "react";
 
 /* ============================================================
    TRADING COMMAND CENTER
@@ -3553,12 +3553,48 @@ function ScanJournal({trades}){
   );
 }
 
+/* App-level runner-scan store. The scan runs here, OUTSIDE the tab component, so
+   switching tabs never cancels it — you leave, come back, and it's either still
+   running (with live progress) or the results are waiting. Any mounted RunnerScan
+   subscribes to this and reflects it. */
+const runnerStore = { state:{rows:null,loading:false,prog:"",err:"",when:null}, subs:new Set(), running:false, hydrated:false };
+function rsSet(patch){ runnerStore.state={...runnerStore.state,...patch}; runnerStore.subs.forEach(f=>f()); }
+function rsSubscribe(f){ runnerStore.subs.add(f); return ()=>{ runnerStore.subs.delete(f); }; }
+function rsSnapshot(){ return runnerStore.state; }
+async function hydrateRunner(){
+  if(runnerStore.hydrated) return; runnerStore.hydrated=true;
+  try{ const s=await sGet("runner_scan"); if(s&&Array.isArray(s.rows)) rsSet({rows:s.rows, when:s.when||null}); }catch(e){}
+}
+async function runRunnerScan(watch, extra){
+  if(runnerStore.running) return;
+  runnerStore.running=true;
+  rsSet({loading:true, err:"", rows:null, prog:""});
+  try{
+    const typed=String(extra||"").split(/[,\s]+/).map(x=>x.trim().toUpperCase()).filter(Boolean);
+    const syms=[...new Set([...typed,...(watch||[])])].slice(0,12);
+    if(!syms.length){ rsSet({err:"Add tickers to your watchlist, or type some above.", loading:false}); runnerStore.running=false; return; }
+    const chunks=[]; for(let i=0;i<syms.length;i+=6) chunks.push(syms.slice(i,i+6));
+    let all=[];
+    for(let ci=0;ci<chunks.length;ci++){
+      rsSet({prog:`Grading ${ci*6+1}–${Math.min((ci+1)*6,syms.length)} of ${syms.length}…`});
+      const sys=await withKB(RUNNER_SYS+`\n\nReturn ONLY a compact JSON array, no prose or fences:
+[{"s":"GOOGL","dir":"up","px":356.15,"atr":6.2,"comp":21,"lvl":19,"cat":22,"fuel":14,"ivr":48,"liq":"thick","trig":359.68,"inval":344.8,"strike":365,"prem":1.35,"dte":5,"ev":"Q2 earnings Aug 5","why":"what's coiled, what level breaks it"}]
+dir="up"|"down". px=last close. atr=avg DAILY range in $ (~14d). comp/lvl/cat/fuel=0-25 ints. ivr=IV rank 0-100. liq="thick"|"ok"|"thin". trig=exact trigger price. inval=price that proves it wrong. strike=the slightly-OTM strike you'd buy in the dir direction. prem=rough per-share premium at that dte. ev=catalyst in <=4 words or "none". why<=14 words. Keep every field TIGHT so the full JSON fits.`);
+      const res=await callClaude({ maxTokens:1000, tools:[{type:"web_search_20250305",name:"web_search"}], system:sys,
+        messages:[{role:"user",content:`Runner scan for: ${chunks[ci].join(", ")}. Today is ${todayISO()}. Reply with ONLY the JSON array.`}] });
+      let j=extractJson(getText(res)); if(!Array.isArray(j)||!j.length) j=extractObjs(getText(res));
+      if(Array.isArray(j)) all=all.concat(j.filter(x=>x&&x.s));
+    }
+    rsSet({prog:""});
+    if(all.length){ all.sort((a,b)=>runnerScore(b)-runnerScore(a)); const t=Date.now(); rsSet({rows:all, when:t}); sSet("runner_scan",{rows:all,when:t}); logScan("Runner", all.map(r=>r.s), all.map(r=>({s:r.s,dir:r.dir,px:num(r.px),score:runnerScore(r),why:r.why,trig:num(r.trig),inval:num(r.inval),atr:num(r.atr),ivr:r.ivr!=null?num(r.ivr):null,liq:r.liq,ev:r.ev})), t); }
+    else rsSet({err:"Nothing came back — tap again to retry."});
+  }catch(e){ rsSet({prog:"", err:aiErr(e,"Scan")}); }
+  rsSet({loading:false});
+  runnerStore.running=false;
+}
 function RunnerScan({watch}){
-  const [rows,setRows]=useState(null);
-  const [loading,setLoading]=useState(false);
-  const [err,setErr]=useState("");
-  const [prog,setProg]=useState("");
-  const [when,setWhen]=useState(null);
+  const st = useSyncExternalStore(rsSubscribe, rsSnapshot, rsSnapshot);
+  const { rows, loading, prog, err, when } = st;
   const [extra,setExtra]=useState("");
   const [open,setOpen]=useState(null);
   const [plOpen,setPlOpen]=useState(null);
@@ -3568,7 +3604,7 @@ function RunnerScan({watch}){
   const [ready,setReady]=useState(false);
   const [saved,setSaved]=useState("");
 
-  useEffect(()=>{ (async()=>{ const s=await sGet("runner_scan"); if(s&&Array.isArray(s.rows)){ setRows(s.rows); setWhen(s.when||null); } setReady(true); })(); },[]);
+  useEffect(()=>{ (async()=>{ await hydrateRunner(); setReady(true); })(); },[]);
   useAutoScan(ready, when, loading, ()=>scan());
 
   // Explicit save: write EVERY ticker's full detail to the Scans journal. Uses the
@@ -3582,31 +3618,7 @@ function RunnerScan({watch}){
     setSaved(`Saved all ${rows.length} tickers — full detail is in the Scans tab.`);
   }
 
-  async function scan(){
-    if(loading) return;
-    setLoading(true); setErr(""); setRows(null);
-    try{
-      const typed=extra.split(/[,\s]+/).map(x=>x.trim().toUpperCase()).filter(Boolean);
-      const syms=[...new Set([...typed,...(watch||[])])].slice(0,12);
-      if(!syms.length){ setErr("Add tickers to your watchlist, or type some above."); setLoading(false); return; }
-      const chunks=[]; for(let i=0;i<syms.length;i+=6) chunks.push(syms.slice(i,i+6));
-      let all=[];
-      for(let ci=0;ci<chunks.length;ci++){
-        setProg(`Grading ${ci*6+1}–${Math.min((ci+1)*6,syms.length)} of ${syms.length}…`);
-        const sys=await withKB(RUNNER_SYS+`\n\nReturn ONLY a compact JSON array, no prose or fences:
-[{"s":"GOOGL","dir":"up","px":356.15,"atr":6.2,"comp":21,"lvl":19,"cat":22,"fuel":14,"ivr":48,"liq":"thick","trig":359.68,"inval":344.8,"strike":365,"prem":1.35,"dte":5,"ev":"Q2 earnings Aug 5","why":"what's coiled, what level breaks it"}]
-dir="up"|"down". px=last close. atr=avg DAILY range in $ (~14d). comp/lvl/cat/fuel=0-25 ints. ivr=IV rank 0-100. liq="thick"|"ok"|"thin". trig=exact trigger price. inval=price that proves it wrong. strike=the slightly-OTM strike you'd buy in the dir direction. prem=rough per-share premium at that dte. ev=catalyst in <=4 words or "none". why<=14 words. Keep every field TIGHT so the full JSON fits.`);
-        const res=await callClaude({ maxTokens:1000, tools:[{type:"web_search_20250305",name:"web_search"}], system:sys,
-          messages:[{role:"user",content:`Runner scan for: ${chunks[ci].join(", ")}. Today is ${todayISO()}. Reply with ONLY the JSON array.`}] });
-        let j=extractJson(getText(res)); if(!Array.isArray(j)||!j.length) j=extractObjs(getText(res));
-        if(Array.isArray(j)) all=all.concat(j.filter(x=>x&&x.s));
-      }
-      setProg("");
-      if(all.length){ all.sort((a,b)=>runnerScore(b)-runnerScore(a)); setRows(all); const t=Date.now(); setWhen(t); setSaved(""); sSet("runner_scan",{rows:all,when:t}); logScan("Runner", all.map(r=>r.s), all.map(r=>({s:r.s,dir:r.dir,px:num(r.px),score:runnerScore(r),why:r.why,trig:num(r.trig),inval:num(r.inval),atr:num(r.atr),ivr:r.ivr!=null?num(r.ivr):null,liq:r.liq,ev:r.ev})), t); }
-      else setErr("Nothing came back — tap again to retry.");
-    }catch(e){ setProg(""); setErr(aiErr(e,"Scan")); }
-    setLoading(false);
-  }
+  function scan(){ setSaved(""); runRunnerScan(watch, extra); }
 
   const shown=(rows||[]).filter(r=>runnerScore(r)>=minScore);
 
