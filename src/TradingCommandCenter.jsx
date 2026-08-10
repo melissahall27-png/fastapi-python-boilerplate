@@ -110,11 +110,13 @@ async function sSet(key,val){
   catch(e){ mem[key] = val; }   // private mode / quota full -> session-only
 }
 
-/* ---------- cross-device journal sync (opt-in via a private code) ----------
-   Devices sharing the same code push/pull their trades through /api/sync (a
-   cloud KV store). Trades are merged by id (union), so both devices accumulate
-   everything. Images are stripped from the pushed copy to keep it small — the
-   trade text/numbers AND screenshots sync, so an uploaded shot shows everywhere. */
+/* ---------- cross-device journal sync ----------
+   Devices sharing the same code push/pull their trades through /api/sync (a cloud
+   KV store). Trades merge by id, keeping the NEWER edit (updatedAt), so both
+   devices converge without clobbering. Screenshots sync too; only when the whole
+   blob would exceed the store's size cap are the oldest screenshots trimmed from
+   the pushed copy (see trimForSync) — and the merge never drops an image a device
+   still holds. Deletes are tracked as tombstones so they stick everywhere. */
 function mergeTradesById(a,b){
   const m=new Map();
   for(const t of [...(a||[]),...(b||[])]){

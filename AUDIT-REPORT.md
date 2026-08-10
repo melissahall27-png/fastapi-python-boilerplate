@@ -20,9 +20,11 @@ device-side check you can run yourself.
 - **Round-trip refresh (same device): WORKS** — `scan:log` persists in localStorage.
 - **On both devices: BROKEN by design.** `scan:log` is **local-only; it does not
   sync** (see INVENTORY §3). Phase 3 #2 explicitly lists scans as a must-sync type.
-- **Duplicate behavior:** the manual Save dedupes by `batchId`, **but** the same
-  scan also auto-logs with `batchId:null` (`:3726`) — so a scan can appear **twice**
-  (one auto row + one saved row). Flagged MEDIUM.
+- **Duplicate behavior:** dedupes correctly. *(Correction: an earlier draft of this
+  report claimed the auto-log used `batchId:null` and could double with the manual
+  Save. On re-read that was WRONG — both the auto-log and the manual Save pass the
+  scan's timestamp as the `batchId`, so re-saving the same scan overwrites its row
+  rather than duplicating. No bug here.)*
 
 ### 2. Desktop ↔ mobile realtime sync  →  **PARTIAL / UNVERIFIED (sandbox-blocked)**
 - **Mechanism (stated plainly): NOT realtime.** It's 45 s polling + 1.5 s debounced
@@ -121,11 +123,24 @@ no-store→`not-configured`.
 7. **The 6 questions** — blocked on your input (NEEDS-CLARIFICATION.md).
 
 **MEDIUM**
-8. Duplicate scan rows (auto-log + manual save). `:3726` vs `:3753`
+8. ~~Duplicate scan rows~~ — WITHDRAWN: misread; both Runner logs share a batchId, no dup.
 9. No open/unrealized P&L. `:2151-2157`
 10. No auth on the shared sync code (privacy: one global journal). `:125-126`
 
 **LOW**
-11. Stale code comment claims images are stripped from sync (they aren't). `:117`
+11. ~~Stale "images stripped" comment~~ — FIXED (comment rewritten).
 12. FP dust in aggregate P&L; consider cents-integer math. `:2154-2155`
 13. Bundle-size warning (code-split). build output
+
+---
+
+## Fix log (this branch)
+- ✅ #7 The 6 questions on every trade (7/7)
+- ✅ CRITICAL screenshots-kill-sync (7/7)
+- ✅ CRITICAL deletes-resurrect (5/5)
+- ✅ CRITICAL edits-clobbered-by-poll → timestamp merge (4/4)
+- ✅ LOW #11 stale comment
+- ⏸ HIGH #4 sync scans/notes — deferred: bigger change (separate KV namespace +
+  wiring ScanJournal to re-read); doing it hastily risks new "disappearing" bugs.
+- ⏸ HIGH #5 chat→bullets — needs your replace-vs-append answer (won't invent).
+- ⏸ HIGH #6 leaks→discipline — needs your yes/no (won't invent a scoring rule).
