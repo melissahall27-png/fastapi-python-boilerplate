@@ -5432,6 +5432,85 @@ function VolumeCard(){
   );
 }
 
+const FOUND_LAYERS=[
+  ["Core — the base","#3FB782","One broad, cheap index fund that owns everything. 60–90% of the foundation. Boring on purpose — this is the part that quietly compounds for years."],
+  ["Satellites — the tilt","#E3A857","A growth fund plus a couple individual names you believe in. Smaller slices (10–30% total). More upside, more swing — keep them small."],
+];
+const FOUND_TICKERS=[
+  ["VTI / VOO","Total US market (VTI) or S&P 500 (VOO) — owns the whole thing for ~0.03%/yr.","Core ✅"],
+  ["QQQM","Nasdaq-100 — big-tech growth. 0.15%/yr. The buy-and-hold version of QQQ (same holdings, cheaper).","Growth tilt"],
+  ["SPMO","S&P 500 Momentum — the ~100 strongest-trending names. 0.13%. Spicier; can whipsaw in a rotation.","Momentum tilt"],
+  ["AAPL / GOOGL","Individual stocks you have real conviction in. Buy in fractional dollars if the share price is high.","Conviction satellite"],
+];
+const FOUND_MIX=[["VTI / VOO","60%","core"],["QQQM","20%","growth"],["AAPL","10%","conviction"],["GOOGL","10%","conviction"]];
+const FOUND_STEPS=[
+  ["Get the base in place first","Emergency cash (3–6 months of expenses) set aside, high-interest debt gone, and only invest money you won't touch for 5+ years."],
+  ["Pick the account TYPE — this matters most","A Roth IRA first if you qualify: it grows 100% tax-free and you can pull your contributions anytime (annual limit ~$7k, income limits apply). Then a regular brokerage for anything beyond. Long-term holds belong in the Roth."],
+  ["Open it at Schwab or Vanguard","Both are excellent with $0 commissions. Schwab has the nicer app plus fractional 'Stock Slices.' Open account → verify ID → link your bank → fund it. ~10 minutes."],
+  ["Buy — in dollars","Search the ticker → Buy → a Market order is fine for these huge, liquid ETFs (or a Limit at the current price if you want control). Enter a dollar amount → Review → Place. Repeat for each holding."],
+  ["Automate it (the real secret)","Set an automatic recurring buy every payday into the core fund. That's dollar-cost averaging — you never have to time the market, and dips simply buy you more shares."],
+  ["Then leave it alone","Check it monthly, not hourly. Rebalance about once a year back to your target mix. Don't panic-sell red days — over a 5–20 year horizon they're when your auto-buys work hardest for you."],
+];
+function FoundationCard(){
+  return (
+    <div className="card" style={{padding:20}}>
+      <div style={{display:"flex",alignItems:"center",gap:7}}><div className="eyebrow" style={{margin:0}}>The long game</div><Help text="Your foundation account — the boring, long-term money that compounds while the trading account takes swings. Broad index core first, small tilts second. Education, not personalized advice: size it to your own situation."/></div>
+      <h3 className="disp" style={{margin:"0 0 4px",fontSize:19,fontWeight:700}}>Build the boring money</h3>
+      <p style={{margin:"0 0 14px",fontSize:14,color:"var(--dim)",lineHeight:1.6}}>Keep this separate from your options account, with the opposite rules: buy broad, buy often, hold for years. This foundation is exactly what makes it OK to take swings in The Edge Room.</p>
+
+      <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:16}}>
+        {FOUND_LAYERS.map(([k,c,d])=>(
+          <div key={k} style={{display:"flex",gap:12,padding:"12px 14px",background:"var(--bg)",border:"1px solid var(--line)",borderLeft:"3px solid "+c,borderRadius:10}}>
+            <div className="disp" style={{fontSize:14.5,fontWeight:700,color:c,minWidth:118,flexShrink:0}}>{k}</div>
+            <div style={{fontSize:14,color:"var(--dim)",lineHeight:1.5}}>{d}</div>
+          </div>
+        ))}
+      </div>
+
+      <div className="eyebrow" style={{marginBottom:8}}>The building blocks</div>
+      <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:16}}>
+        {FOUND_TICKERS.map(([t,d,role])=>(
+          <div key={t} style={{display:"flex",gap:10,alignItems:"baseline",flexWrap:"wrap",padding:"10px 12px",background:"var(--bg)",border:"1px solid var(--line)",borderRadius:10}}>
+            <span className="mono" style={{fontSize:13.5,fontWeight:800,color:"var(--brass)",minWidth:96}}>{t}</span>
+            <span style={{flex:"1 1 170px",fontSize:13.5,color:"var(--dim)",lineHeight:1.5}}>{d}</span>
+            <span className="mono" style={{fontSize:11.5,color:"var(--comp)"}}>{role}</span>
+          </div>
+        ))}
+      </div>
+
+      <div style={{padding:"12px 15px",background:"rgba(227,168,87,0.06)",border:"1px solid var(--brass-dim)",borderRadius:11,marginBottom:16}}>
+        <div style={{fontSize:14,color:"var(--bone)",lineHeight:1.6}}><b style={{color:"var(--brass)"}}>Watch the overlap:</b> a broad core (VTI/VOO), QQQM, SPMO and AAPL/GOOGL all hold Apple &amp; Google near the top. Stack them all and you own Apple four times — that's concentration, not diversification. Keep the core different from the tilts.</div>
+      </div>
+
+      <div className="eyebrow" style={{marginBottom:8}}>Example foundation <span style={{color:"var(--faint)",textTransform:"none",letterSpacing:0,fontWeight:400}}>· illustration, size to your own plan</span></div>
+      <div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:16}}>
+        {FOUND_MIX.map(([t,p,r])=>(
+          <div key={t} style={{flex:"1 1 120px",padding:"11px 13px",background:"var(--bg)",border:"1px solid var(--line)",borderRadius:10,textAlign:"center"}}>
+            <div className="mono" style={{fontSize:13,fontWeight:800,color:"var(--bone)"}}>{t}</div>
+            <div className="disp" style={{fontSize:20,fontWeight:800,color:"var(--brass)",lineHeight:1.2}}>{p}</div>
+            <div className="mono" style={{fontSize:10.5,color:"var(--faint)"}}>{r}</div>
+          </div>
+        ))}
+      </div>
+
+      <div className="eyebrow" style={{marginBottom:8}}>Step by step</div>
+      <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:16}}>
+        {FOUND_STEPS.map(([t,d],i)=>(
+          <div key={i} style={{display:"flex",gap:12,padding:"11px 13px",background:"var(--bg)",border:"1px solid var(--line)",borderRadius:10}}>
+            <span className="mono" style={{fontSize:13.5,fontWeight:800,color:"var(--brass)",flexShrink:0,minWidth:18}}>{i+1}</span>
+            <div><div className="disp" style={{fontSize:14.5,fontWeight:700,color:"var(--bone)",marginBottom:2}}>{t}</div><div style={{fontSize:13.5,color:"var(--dim)",lineHeight:1.55}}>{d}</div></div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{padding:"12px 15px",background:"rgba(63,183,130,0.07)",border:"1px solid var(--bull)",borderRadius:11}}>
+        <div style={{fontSize:14,color:"var(--bone)",lineHeight:1.6}}><b style={{color:"var(--bull)"}}>The one rule that protects you:</b> keep this account completely separate from your options money — different account, different rules, no borrowing between them. The foundation is what lets you take swings in The Edge Room without risking your future.</div>
+      </div>
+      <div className="mono" style={{fontSize:11.5,color:"var(--faint)",marginTop:10,lineHeight:1.5}}>Education, not personalized financial advice. Fees and contribution limits change — confirm the current figures, and match the mix to your own timeline, income and risk tolerance.</div>
+    </div>
+  );
+}
+
 function WalkRow({i,t,w,l}){
   const [open,setOpen]=useState(false);
   return (
@@ -5519,6 +5598,7 @@ function Playbook(){
       <EntryExitDiagram/>
       <DaySwingCard/>
       <VolumeCard/>
+      <FoundationCard/>
       {/* Coach */}
       <div className="card" style={{padding:20}}>
         <div style={{display:"flex",alignItems:"center",gap:7}}><div className="eyebrow" style={{margin:0}}>Trade coach</div><Help text="Paste a trade idea and it pressure-tests it against your rules before you click: is there a real trigger, or are you anticipating? Right strike/DTE? Where's the stop and the scale-out? It catches the mistake before it costs you."/></div>
