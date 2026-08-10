@@ -18,10 +18,20 @@ function cleanCode(raw) {
 }
 
 export default async function handler(req, res) {
-  // Accept whichever names the connected store uses — Vercel KV sets KV_REST_API_*,
-  // an Upstash Redis integration sets UPSTASH_REDIS_REST_* — so either works.
-  const base = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL;
-  const token = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN;
+  // Find the Redis REST URL + token no matter what the integration named them —
+  // Vercel KV uses KV_REST_API_*, Upstash uses UPSTASH_REDIS_REST_*, and a custom
+  // prefix (e.g. STORAGE_) prepends. Fall back to scanning env for any *_REST_API_URL
+  // / *_REST_API_TOKEN (or *REDIS_REST_URL/TOKEN) pair, skipping read-only tokens.
+  const env = process.env;
+  let base = env.KV_REST_API_URL || env.UPSTASH_REDIS_REST_URL;
+  let token = env.KV_REST_API_TOKEN || env.UPSTASH_REDIS_REST_TOKEN;
+  if (!base || !token) {
+    for (const k of Object.keys(env)) {
+      const v = env[k]; if (!v) continue;
+      if (!base && /(REST_API_URL|REDIS_REST_URL)$/.test(k)) base = v;
+      if (!token && /(REST_API_TOKEN|REDIS_REST_TOKEN)$/.test(k) && !/READ_ONLY/.test(k)) token = v;
+    }
+  }
   if (!base || !token) return res.status(200).json({ ok: false, reason: "not-configured" });
 
   const auth = { Authorization: "Bearer " + token };
