@@ -38,7 +38,11 @@ export default async function handler(req, res) {
   const codeRaw = req.method === "POST" ? (req.body && req.body.code) : (req.query && req.query.code);
   const code = cleanCode(codeRaw);
   if (!code) return res.status(200).json({ ok: false, reason: "no-code" });
-  const key = "tccsync:" + code;
+  // Optional namespace so one code can hold several independent blobs (e.g. the
+  // journal vs. the scan log), each in its own key. Omitted = the journal (trades).
+  const nsRaw = req.method === "POST" ? (req.body && req.body.ns) : (req.query && req.query.ns);
+  const ns = String(nsRaw || "").toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 24);
+  const key = "tccsync:" + (ns ? ns + ":" : "") + code;
 
   try {
     if (req.method === "POST") {

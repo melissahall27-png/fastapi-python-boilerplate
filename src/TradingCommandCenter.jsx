@@ -165,6 +165,22 @@ async function syncPush(code,trades,deleted){
   const {trades:payload,dropped}=trimForSync(code,trades);
   try{ const r=await fetch("/api/sync",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({code,trades:payload,deleted:(deleted||[]).slice(-1000)})}); const j=await r.json().catch(()=>({ok:false,reason:"bad-json"})); if(j) j.dropped=dropped; return j; }catch(e){ return {ok:false,reason:"err"}; }
 }
+/* Scan log sync — its own namespace so it never touches the journal blob. The log
+   is append-only, so a union-by-id merge can only ADD scans, never lose one. */
+async function syncPullNs(code,ns){ try{ const r=await fetch("/api/sync?code="+encodeURIComponent(code)+"&ns="+encodeURIComponent(ns)); const j=await r.json().catch(()=>null); return (j&&j.ok&&Array.isArray(j.trades))?j.trades:null; }catch(e){ return null; } }
+async function syncPushNs(code,ns,items){ try{ await fetch("/api/sync",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({code,ns,trades:(items||[]).slice(0,400)})}); }catch(e){} }
+function mergeScans(a,b){ const m=new Map(); for(const s of [...(a||[]),...(b||[])]){ if(s&&s.id) m.set(s.id,s); } return [...m.values()].sort((x,y)=>(y.ts||0)-(x.ts||0)).slice(0,400); }
+async function pushScans(){ try{ const code=getSyncCode(); const local=await sGet("scan:log"); if(Array.isArray(local)) await syncPushNs(code,"scans",local); }catch(e){} }
+async function syncScans(){
+  try{
+    const code=getSyncCode(); const remote=await syncPullNs(code,"scans");
+    let local=await sGet("scan:log"); if(!Array.isArray(local)) local=[];
+    if(remote){ const merged=mergeScans(local,remote);
+      if(merged.length!==local.length){ await sSet("scan:log",merged); try{ window.dispatchEvent(new CustomEvent("tcc:scans-updated")); }catch(e){} }
+      await syncPushNs(code,"scans",merged);
+    }
+  }catch(e){}
+}
 
 /* ---------- auto-run scans ----------
    Prices are free (Yahoo) and refresh on their own, but each SCAN is a paid AI
@@ -490,7 +506,7 @@ export default function TradingCommandCenter(){
   // Pull the other device's trades every 45s, merge them, and honor tombstones.
   useEffect(()=>{
     if(!loaded) return; const c=getSyncCode();
-    const id=setInterval(async()=>{ const remote=await syncPull(c); if(!remote) return;
+    const id=setInterval(async()=>{ syncScans(); const remote=await syncPull(c); if(!remote) return;
       const tomb=mergeIds(deletedRef.current,remote.deleted);
       if(tomb.length!==deletedRef.current.length) setDeletedIds(tomb);
       if(Array.isArray(remote.trades)){ setTrades(prev=>{ const merged=applyTombstones(mergeTradesById(prev,remote.trades),tomb); return (merged.length!==prev.length || tomb.length!==deletedRef.current.length)? merged: prev; }); }
@@ -588,6 +604,7 @@ export default function TradingCommandCenter(){
     const _sc=getSyncCode();
     if(_sc){ const remote=await syncPull(_sc); if(remote){ tomb=mergeIds(tomb,remote.deleted); if(Array.isArray(remote.trades)&&remote.trades.length){ t=applyTombstones(mergeTradesById(t,remote.trades),tomb); setTrades(t); } } }
     setDeletedIds(tomb);
+    syncScans();   // pull the other device's saved scans into this one's Scans tab
     const w=await sGet("watchlist:tickers");
     let list = (Array.isArray(w)&&w.length) ? [...w] : [...DEFAULT_WATCH];
     const ver = await sGet("settings:watchVersion");
@@ -3618,6 +3635,8 @@ async function logScan(source, syms, top, batchId){
     const entry = { id: Date.now()+"-"+Math.random().toString(36).slice(2,6), batchId: batchId!=null?batchId:null, ts: Date.now(), date: todayISO(),
       source, syms:(syms||[]).map(s=>String(s||"").toUpperCase()).filter(Boolean).slice(0,40), top:(top||[]).slice(0,40) };
     await sSet("scan:log", [entry, ...base].slice(0,400));
+    try{ window.dispatchEvent(new CustomEvent("tcc:scans-updated")); }catch(e){}
+    pushScans();   // share this scan with the user's other devices
   }catch(e){}
 }
 function srcTone(s){ return s==="Runner"?"var(--brass)":s==="Bias scan"?"var(--focus)":(s==="Goal plays"||s==="Account plays")?"var(--bull)":"var(--comp)"; }
@@ -3626,7 +3645,8 @@ function ScanJournal({trades}){
   const [log,setLog]=useState(null);
   const [openId,setOpenId]=useState(null);
   const [srcFilter,setSrcFilter]=useState("all");
-  useEffect(()=>{ (async()=>{ const l=await sGet("scan:log"); setLog(Array.isArray(l)?l:[]); })(); },[]);
+  useEffect(()=>{ const read=async()=>{ const l=await sGet("scan:log"); setLog(Array.isArray(l)?l:[]); }; read();
+    const h=()=>read(); window.addEventListener("tcc:scans-updated",h); return ()=>window.removeEventListener("tcc:scans-updated",h); },[]);
   const tradesFor=(scan)=>(trades||[]).filter(t=>{
     const tk=(t.ticker||"").toUpperCase(); if(!tk) return false;
     if(!(scan.syms||[]).map(s=>String(s).toUpperCase()).includes(tk)) return false;
